@@ -14,7 +14,7 @@
 <body data-page="index">
 <header class="topbar">
   <a class="brand" href="/"><img src="/static/logo.svg" alt="" width="32" height="32"><span class="name">DataDigest</span></a>
-  <span class="ver">v0.2</span>
+  <span class="ver">v0.3</span>
   <nav class="nav"><a href="/" class="active">Overview</a><a href="/docs">API docs</a></nav>
   <div class="pills" id="pills"></div>
   <button class="btn primary" type="button" id="top-upload">
@@ -33,26 +33,27 @@
 
   <section class="bento" id="kpis" aria-label="Totals"></section>
 
-  <label class="drop" id="drop">
+  <label class="drop" id="drop" tabindex="0" role="button" aria-label="Upload CSV files">
     <span class="ico">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6m0 0-2.5 2.5M12 12l2.5 2.5"/></svg>
     </span>
     <span class="txt">
-      <strong>Drop a CSV here or click to choose</strong>
+      <strong>Drop CSV files here or click to choose</strong>
       <span class="muted">.csv, .tsv or .txt up to 10 MB · comma, semicolon, tab or pipe · UTF-8 or Windows-1254</span>
-      <span class="progress" id="progress" hidden><b></b></span>
     </span>
-    <input type="file" id="file" accept=".csv,.tsv,.txt">
+    <input type="file" id="file" accept=".csv,.tsv,.txt" multiple>
   </label>
+  <div class="uploads" id="uploads" aria-live="polite"></div>
+  <div class="samples" id="samples" hidden></div>
 
   <section class="card">
     <div class="card-h">
       <h2 class="card-t">Datasets</h2>
-      <input class="search" id="search" type="search" placeholder="Filter by file name…" aria-label="Filter datasets">
+      <input class="search" id="search" type="search" placeholder="Filter by file name  (press /)" aria-label="Filter datasets">
     </div>
     <div class="table-wrap">
       <table>
-        <thead><tr><th>File</th><th>Status</th><th>Quality</th><th>Rows</th><th>Columns</th><th>Warnings</th><th>Size</th><th>Uploaded</th></tr></thead>
+        <thead><tr><th>File</th><th>Status</th><th>Quality</th><th>Rows</th><th>Columns</th><th>Warnings</th><th>Size</th><th>Uploaded</th><th><span class="sr-only">Actions</span></th></tr></thead>
         <tbody id="datasets"></tbody>
       </table>
     </div>

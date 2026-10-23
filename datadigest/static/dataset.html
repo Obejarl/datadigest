@@ -14,7 +14,7 @@
 <body data-page="dataset">
 <header class="topbar">
   <a class="brand" href="/"><img src="/static/logo.svg" alt="" width="32" height="32"><span class="name">DataDigest</span></a>
-  <span class="ver">v0.2</span>
+  <span class="ver">v0.3</span>
   <nav class="nav"><a href="/">Overview</a><a href="/docs">API docs</a></nav>
   <div class="pills" id="pills"></div>
   <a class="btn primary" href="/#upload">
@@ -31,12 +31,16 @@
       <div class="chips" id="chips"></div>
     </div>
     <div class="actions" id="actions" hidden>
+      <span class="actions" id="report-actions">
       <a class="btn primary" id="report-download">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v12m0 0-4-4m4 4 4-4M4 20h16"/></svg>
         Download report
       </a>
       <a class="btn" id="report-open" target="_blank" rel="noopener">Open report</a>
       <a class="btn" id="profile-json" target="_blank" rel="noopener">JSON</a>
+      </span>
+      <button class="btn" id="copy-link" type="button" title="Copy a link to this page">Copy link</button>
+      <button class="btn" id="rerun" type="button" title="Run the analysis again">Re-run</button>
       <button class="btn danger" id="delete" type="button">Delete</button>
     </div>
   </div>
@@ -51,7 +55,8 @@
   <!-- failed -->
   <section class="card error-card" id="failed" hidden>
     <h2 class="card-t">Could not profile this file</h2>
-    <p id="error" style="margin:12px 0 0"></p>
+    <p id="error" style="margin:12px 0 16px"></p>
+    <button class="btn primary" id="retry" type="button">Try again</button>
   </section>
 
   <!-- done -->
@@ -62,6 +67,7 @@
       <button class="tab active" role="tab" data-tab="overview">Overview <kbd>1</kbd></button>
       <button class="tab" role="tab" data-tab="columns">Columns <span class="count" id="col-count"></span> <kbd>2</kbd></button>
       <button class="tab" role="tab" data-tab="correlations">Correlations <kbd>3</kbd></button>
+      <button class="tab" role="tab" data-tab="preview">Preview <kbd>4</kbd></button>
     </div>
 
     <div class="pane active" id="pane-overview">
@@ -84,6 +90,12 @@
     <div class="pane" id="pane-columns">
       <div class="filters" id="filters">
         <input class="search" id="col-search" type="search" placeholder="Find a column…" aria-label="Find a column">
+        <select class="search sort" id="col-sort" aria-label="Sort columns">
+          <option value="order">File order</option>
+          <option value="missing">Most missing</option>
+          <option value="unique">Most unique values</option>
+          <option value="name">Name A–Z</option>
+        </select>
       </div>
       <div class="cols" id="cols"></div>
     </div>
@@ -99,6 +111,13 @@
           <div class="pairs" id="pairs"></div>
         </section>
       </div>
+    </div>
+
+    <div class="pane" id="pane-preview">
+      <section class="card">
+        <div class="card-h"><h2 class="card-t">First rows</h2><span class="chip" id="preview-note"></span></div>
+        <div class="table-wrap preview-wrap"><table class="preview"><thead id="preview-head"></thead><tbody id="preview-body"></tbody></table></div>
+      </section>
     </div>
   </section>
 
