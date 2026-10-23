@@ -15,6 +15,10 @@ class Settings(BaseSettings):
     max_upload_mb: int = 10
     max_rows: int = 200_000
     retention_days: int = 7
+    # A job still queued/processing after this long is treated as lost (crashed worker, flushed Redis).
+    stuck_after_minutes: int = 15
+    # Bundled demo files offered on the dashboard ("Try a sample").
+    samples_dir: str = "samples"
 
     @property
     def max_upload_bytes(self) -> int:

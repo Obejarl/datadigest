@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from datadigest.api import routes_datasets, routes_health, routes_stats
+from datadigest.api import routes_datasets, routes_health, routes_samples, routes_stats
 
 STATIC = Path(__file__).parent.parent / "static"
 
@@ -13,12 +13,25 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 app = FastAPI(
     title="DataDigest",
-    version="0.2.0",
+    version="0.3.0",
     description="Upload a CSV, get an automatic data-quality profile, charts and an HTML report.",
 )
 app.include_router(routes_health.router)
 app.include_router(routes_datasets.router)
 app.include_router(routes_stats.router)
+app.include_router(routes_samples.router)
+
+
+@app.middleware("http")
+async def security_headers(request, call_next):
+    """Cheap defaults: no MIME sniffing, no framing (clickjacking), no full URLs leaked to other sites."""
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "same-origin")
+    return response
+
+
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 

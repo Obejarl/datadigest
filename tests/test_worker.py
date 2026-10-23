@@ -71,3 +71,34 @@ def test_cleanup_deletes_only_old_datasets(factory):
         assert db.get(Dataset, old) is None
         assert db.get(Dataset, fresh) is not None
         assert db.scalar(select(func.count()).select_from(DatasetFile)) == 1
+
+
+def test_fail_stuck_marks_old_pending_jobs(factory):
+    from datadigest.cleanup import STUCK_MESSAGE, fail_stuck
+
+    def add(status, minutes_ago):
+        with factory() as db:
+            ds = Dataset(
+                name="x",
+                filename="x.csv",
+                size_bytes=1,
+                status=status,
+                queued_at=utcnow() - timedelta(minutes=minutes_ago),
+            )
+            ds.file = DatasetFile(content=b"a\n1\n")
+            db.add(ds)
+            db.commit()
+            return ds.id
+
+    stuck_processing = add(Status.PROCESSING, 60)
+    stuck_queued = add(Status.QUEUED, 60)
+    fresh = add(Status.PROCESSING, 1)
+    old_done = add(Status.DONE, 600)
+
+    assert fail_stuck(factory, minutes=15) == 2
+    with factory() as db:
+        for dataset_id in (stuck_processing, stuck_queued):
+            ds = db.get(Dataset, dataset_id)
+            assert (ds.status, ds.error) == (Status.FAILED, STUCK_MESSAGE)
+        assert db.get(Dataset, fresh).status == Status.PROCESSING
+        assert db.get(Dataset, old_done).status == Status.DONE

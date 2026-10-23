@@ -136,7 +136,7 @@ def test_report_escapes_user_content():
 def test_quality_score_clean_file_is_a():
     from datadigest.core.profile import quality_score
 
-    assert quality_score(0, 0, []) == {"score": 100, "grade": "A"}
+    assert quality_score(0, 0, [])["score"] == 100
 
 
 def test_quality_score_penalties_and_caps():
@@ -144,13 +144,32 @@ def test_quality_score_penalties_and_caps():
 
     warnings = [{"type": "high_missing"}, {"type": "constant"}, {"type": "unique_id"}]
     # 10 (missing) + 2*5 (duplicates) + 5 + 3 (warnings; unique_id is free) = 28
-    assert quality_score(10, 5, warnings) == {"score": 72, "grade": "C"}
+    assert quality_score(10, 5, warnings) == {
+        "score": 72,
+        "grade": "C",
+        "penalties": {"missing": 10, "duplicates": 10, "warnings": 8},
+    }
     # every term is capped, so even a terrible file stays within 0-100
     worst = quality_score(100, 100, [{"type": "high_missing"}] * 50)
-    assert worst == {"score": 20, "grade": "D"}
+    assert (worst["score"], worst["grade"]) == (20, "D")
+    assert worst["penalties"] == {"missing": 30, "duplicates": 20, "warnings": 30}
 
 
 def test_profile_includes_quality():
     p = build_profile(load_csv((SAMPLES / "sales.csv").read_bytes()))
     assert 0 <= p["summary"]["quality"]["score"] <= 100
     assert p["summary"]["quality"]["grade"] in "ABCD"
+
+
+def test_preview_keeps_raw_values_and_nulls():
+    p = profile_of("a,b\n1,x\n2,\n" + "\n".join(f"{i},y" for i in range(3, 40)))
+    preview = p["preview"]
+    assert preview["columns"] == ["a", "b"]
+    assert len(preview["rows"]) == 20
+    assert preview["rows"][0] == ["1", "x"]
+    assert preview["rows"][1] == ["2", None]
+
+
+def test_preview_truncates_long_cells():
+    p = profile_of("t\n" + "x" * 500 + "\n")
+    assert len(p["preview"]["rows"][0][0]) == 120

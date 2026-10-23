@@ -34,7 +34,7 @@ def stats(
 
     # Durations are computed in Python: date arithmetic differs between SQLite and PostgreSQL.
     timings = db.execute(
-        select(Dataset.created_at, Dataset.finished_at)
+        select(func.coalesce(Dataset.queued_at, Dataset.created_at), Dataset.finished_at)
         .where(done, Dataset.finished_at.is_not(None))
         .order_by(Dataset.created_at.desc())
         .limit(RECENT_FOR_TIMING)

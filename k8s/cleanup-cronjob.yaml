@@ -1,10 +1,10 @@
-# Every night at 03:00, delete datasets older than RETENTION_DAYS.
+# Every 15 minutes: fail stuck jobs, then delete datasets older than RETENTION_DAYS.
 apiVersion: batch/v1
 kind: CronJob
 metadata:
   name: cleanup
 spec:
-  schedule: "0 3 * * *"
+  schedule: "*/15 * * * *"
   concurrencyPolicy: Forbid
   successfulJobsHistoryLimit: 3
   failedJobsHistoryLimit: 3

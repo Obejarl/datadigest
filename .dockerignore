@@ -9,7 +9,6 @@ __pycache__
 *.db
 .env
 tests
-samples
 docs
 k8s
 .github

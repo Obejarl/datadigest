@@ -15,7 +15,7 @@ from datadigest.core.charts import build_charts
 from datadigest.core.report import render_report
 from datadigest.db import get_db, get_session_factory
 from datadigest.jobs import process_dataset
-from datadigest.models import Dataset, DatasetFile, Status
+from datadigest.models import Dataset, DatasetFile, Status, utcnow
 
 router = APIRouter(prefix="/api/datasets", tags=["datasets"])
 
@@ -49,6 +49,22 @@ def _profile_or_409(dataset: Dataset) -> dict:
     return dataset.profile
 
 
+def schedule(dataset_id: uuid.UUID, background: BackgroundTasks, factory, redis, settings: Settings) -> None:
+    """202 Accepted: the work happens after the response, the client polls GET /{id}."""
+    if redis is not None:
+        jobqueue.enqueue(redis, settings.queue_name, dataset_id)
+    else:
+        background.add_task(process_dataset, dataset_id, factory)
+
+
+def create_dataset(db: Session, filename: str, content: bytes) -> Dataset:
+    dataset = Dataset(name=filename.rsplit(".", 1)[0][:255], filename=filename[:255], size_bytes=len(content))
+    dataset.file = DatasetFile(content=content)
+    db.add(dataset)
+    db.commit()
+    return dataset
+
+
 @router.post("", response_model=DatasetOut, status_code=status.HTTP_202_ACCEPTED)
 async def upload_dataset(
     file: UploadFile,
@@ -65,16 +81,8 @@ async def upload_dataset(
     if not content.strip():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "File is empty")
 
-    dataset = Dataset(name=filename.rsplit(".", 1)[0][:255], filename=filename[:255], size_bytes=len(content))
-    dataset.file = DatasetFile(content=content)
-    db.add(dataset)
-    db.commit()
-
-    # 202 Accepted: the work happens after the response, the client polls GET /{id}.
-    if redis is not None:
-        jobqueue.enqueue(redis, settings.queue_name, dataset.id)
-    else:
-        background.add_task(process_dataset, dataset.id, factory)
+    dataset = create_dataset(db, filename, content)
+    schedule(dataset.id, background, factory, redis, settings)
     return dataset
 
 
@@ -108,6 +116,26 @@ def get_report(dataset_id: uuid.UUID, download: bool = False, db: Session = Depe
         safe = re.sub(r"[^A-Za-z0-9._-]+", "_", dataset.name) or "dataset"
         headers["Content-Disposition"] = f'attachment; filename="{safe}-report.html"'
     return HTMLResponse(html, headers=headers)
+
+
+@router.post("/{dataset_id}/reprocess", response_model=DatasetOut, status_code=status.HTTP_202_ACCEPTED)
+def reprocess_dataset(
+    dataset_id: uuid.UUID,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    factory: sessionmaker = Depends(get_session_factory),
+    redis: Redis | None = Depends(get_redis),
+    settings: Settings = Depends(get_settings),
+):
+    """Run the analysis again: after a failure, or to pick up a newer profiler version."""
+    dataset = _get(db, dataset_id)
+    if dataset.status in (Status.QUEUED, Status.PROCESSING):
+        raise HTTPException(status.HTTP_409_CONFLICT, f"Dataset is already {dataset.status}")
+    dataset.status, dataset.error = Status.QUEUED, None
+    dataset.queued_at, dataset.finished_at = utcnow(), None
+    db.commit()
+    schedule(dataset.id, background, factory, redis, settings)
+    return dataset
 
 
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -38,6 +38,8 @@ class Dataset(Base):
         JSON().with_variant(JSONB(), "postgresql"), default=None, deferred=True
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    # Set on upload and again on every re-run: the start of the current attempt.
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=utcnow)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     file: Mapped["DatasetFile"] = relationship(cascade="all, delete-orphan", passive_deletes=True)

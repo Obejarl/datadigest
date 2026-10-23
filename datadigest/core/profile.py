@@ -25,6 +25,8 @@ DATE_FORMATS = (
 )
 BOOLEAN_WORDS = {"true", "false", "yes", "no", "evet", "hayır", "hayir", "y", "n"}
 TOP_N = 10
+PREVIEW_ROWS = 20
+PREVIEW_CELL_CHARS = 120
 MAX_CORRELATION_COLUMNS = 20
 
 HIGH_MISSING_PCT = 20.0
@@ -244,11 +246,25 @@ def quality_score(missing_cells_pct: float, duplicate_pct: float, warnings: list
 
     It is a heuristic for comparing files and spotting trouble, not a standard metric.
     """
-    penalty = min(missing_cells_pct, 30) + min(2 * duplicate_pct, 20)
-    penalty += min(sum(WARNING_PENALTY.get(w["type"], 0) for w in warnings), 30)
-    score = max(0, min(100, round(100 - penalty)))
+    penalties = {
+        "missing": round(min(missing_cells_pct, 30), 1),
+        "duplicates": round(min(2 * duplicate_pct, 20), 1),
+        "warnings": min(sum(WARNING_PENALTY.get(w["type"], 0) for w in warnings), 30),
+    }
+    score = max(0, min(100, round(100 - sum(penalties.values()))))
     grade = next(letter for threshold, letter in GRADES if score >= threshold)
-    return {"score": score, "grade": grade}
+    # The breakdown is returned so the UI can explain the number, not just show it.
+    return {"score": score, "grade": grade, "penalties": penalties}
+
+
+def _preview(df: pd.DataFrame) -> dict[str, Any]:
+    """The first rows as strings, so users can see the raw data the numbers describe."""
+    head = df.head(PREVIEW_ROWS)
+    rows = [
+        [None if pd.isna(v) else str(v)[:PREVIEW_CELL_CHARS] for v in record]
+        for record in head.itertuples(index=False, name=None)
+    ]
+    return {"columns": [str(c) for c in head.columns], "rows": rows}
 
 
 def build_profile(table: LoadedTable) -> dict[str, Any]:
@@ -287,4 +303,5 @@ def build_profile(table: LoadedTable) -> dict[str, Any]:
         "columns": columns,
         "correlations": correlations,
         "warnings": warnings,
+        "preview": _preview(df),
     }

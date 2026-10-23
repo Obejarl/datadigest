@@ -18,6 +18,7 @@ RUN pip install --no-cache-dir /wheels/* && rm -rf /wheels
 COPY alembic.ini .
 COPY migrations ./migrations
 COPY datadigest ./datadigest
+COPY samples/*.csv ./samples/
 
 USER app
 EXPOSE 8000

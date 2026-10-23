@@ -18,9 +18,10 @@ class DatasetOut(BaseModel):
     warnings_count: int | None
     quality_score: int | None
     created_at: datetime
+    queued_at: datetime | None
     finished_at: datetime | None
 
-    @field_validator("created_at", "finished_at")
+    @field_validator("created_at", "queued_at", "finished_at")
     @classmethod
     def _assume_utc(cls, value: datetime | None) -> datetime | None:
         # SQLite drops the timezone; we only ever store UTC, so put it back.

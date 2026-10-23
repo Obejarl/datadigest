@@ -1,3 +1,5 @@
+import uuid
+
 from sqlalchemy import func, select
 
 from datadigest.config import Settings, get_settings
@@ -142,3 +144,62 @@ def test_stats_worker_mode_reports_queue(queued_client):
     assert stats["mode"] == "worker"
     assert stats["queue_depth"] == 1
     assert stats["by_status"] == {"queued": 1}
+
+
+def test_reprocess_runs_the_analysis_again(client):
+    dataset_id = upload(client).json()["id"]
+    first = client.get(f"/api/datasets/{dataset_id}").json()
+    r = client.post(f"/api/datasets/{dataset_id}/reprocess")
+    assert r.status_code == 202
+    again = client.get(f"/api/datasets/{dataset_id}").json()
+    assert again["status"] == "done"
+    assert again["finished_at"] >= first["finished_at"]
+
+
+def test_reprocess_after_failure_clears_error(client, factory):
+    from datadigest.models import DatasetFile
+
+    dataset_id = upload(client, "bad.csv", b"only_header\n").json()["id"]
+    assert client.get(f"/api/datasets/{dataset_id}").json()["status"] == "failed"
+    with factory() as db:  # simulate a fixed file, then retry
+        db.get(DatasetFile, uuid.UUID(dataset_id)).content = b"a,b\n1,2\n"
+        db.commit()
+    client.post(f"/api/datasets/{dataset_id}/reprocess")
+    dataset = client.get(f"/api/datasets/{dataset_id}").json()
+    assert (dataset["status"], dataset["error"]) == ("done", None)
+
+
+def test_reprocess_refuses_while_queued(queued_client):
+    dataset_id = upload(queued_client).json()["id"]
+    assert queued_client.post(f"/api/datasets/{dataset_id}/reprocess").status_code == 409
+
+
+def test_samples_list_and_load(client):
+    samples = client.get("/api/samples").json()
+    assert {s["name"] for s in samples} == {"sales.csv", "tr_survey.csv"}
+    assert all(s["size_bytes"] > 0 and s["description"] for s in samples)
+
+    r = client.post("/api/samples/tr_survey.csv")
+    assert r.status_code == 202
+    dataset = client.get(f"/api/datasets/{r.json()['id']}").json()
+    assert (dataset["filename"], dataset["status"], dataset["rows"]) == ("tr_survey.csv", "done", 300)
+
+
+def test_samples_reject_unknown_and_traversal(client):
+    assert client.post("/api/samples/nope.csv").status_code == 404
+    assert client.post("/api/samples/..%2Fpyproject.toml").status_code == 404
+
+
+def test_security_headers(client):
+    headers = client.get("/healthz").headers
+    assert headers["x-content-type-options"] == "nosniff"
+    assert headers["x-frame-options"] == "DENY"
+    assert headers["referrer-policy"] == "same-origin"
+
+
+def test_profile_has_preview_and_quality_breakdown(client):
+    dataset_id = upload(client).json()["id"]
+    profile = client.get(f"/api/datasets/{dataset_id}/profile").json()
+    assert profile["preview"]["columns"][0] == "order_id"
+    assert len(profile["preview"]["rows"]) == 20
+    assert set(profile["summary"]["quality"]["penalties"]) == {"missing", "duplicates", "warnings"}
