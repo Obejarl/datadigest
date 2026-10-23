@@ -1,5 +1,9 @@
 # DataDigest
 
+[![CI](https://github.com/Obejarl/datadigest/actions/workflows/ci.yml/badge.svg)](https://github.com/Obejarl/datadigest/actions/workflows/ci.yml)
+![Python 3.13](https://img.shields.io/badge/python-3.13-blue)
+![License: MIT](https://img.shields.io/badge/license-MIT-green)
+
 Upload a CSV and get an automatic data-quality profile: column types, missing values,
 distributions, correlations, warnings and a shareable HTML report.
 
