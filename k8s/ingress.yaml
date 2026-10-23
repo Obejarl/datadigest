@@ -1,0 +1,20 @@
+# Optional. Requires an ingress controller such as ingress-nginx (see README).
+# Apply with:  kubectl apply -n datadigest -f k8s/ingress.yaml   then open http://localhost
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: datadigest
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: 11m   # the 1m default would reject uploads
+spec:
+  ingressClassName: nginx
+  rules:
+    - http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: api
+                port:
+                  number: 80

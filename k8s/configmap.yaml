@@ -1,0 +1,10 @@
+# Non-secret settings, injected into pods as environment variables.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: datadigest-config
+data:
+  REDIS_URL: redis://redis:6379/0
+  MAX_UPLOAD_MB: "10"
+  MAX_ROWS: "200000"
+  RETENTION_DAYS: "7"

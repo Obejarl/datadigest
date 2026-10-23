@@ -1,0 +1,23 @@
+# Migrations run once as a Job, not inside every API pod: two replicas
+# starting together must not both try to alter the schema.
+# Jobs are immutable; for a new release run  kubectl delete job migrate -n datadigest  first.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate
+spec:
+  backoffLimit: 10         # retried while PostgreSQL is still starting
+  template:
+    spec:
+      restartPolicy: OnFailure
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: migrate
+          image: datadigest
+          imagePullPolicy: IfNotPresent
+          command: ["alembic", "upgrade", "head"]
+          envFrom:
+            - configMapRef: { name: datadigest-config }
+            - secretRef: { name: datadigest-secret }

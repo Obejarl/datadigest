@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  replicas: 1              # the HPA takes over from here
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      terminationGracePeriodSeconds: 60   # time to finish the current job after SIGTERM
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: worker
+          image: datadigest
+          imagePullPolicy: IfNotPresent
+          command: ["python", "-m", "datadigest.worker"]
+          envFrom:
+            - configMapRef: { name: datadigest-config }
+            - secretRef: { name: datadigest-secret }
+          resources:
+            requests: { cpu: 200m, memory: 256Mi }   # the HPA measures utilisation against this request
+            limits: { cpu: "1", memory: 1Gi }

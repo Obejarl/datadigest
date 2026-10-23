@@ -1,0 +1,26 @@
+# Every night at 03:00, delete datasets older than RETENTION_DAYS.
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: cleanup
+spec:
+  schedule: "0 3 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 1000
+          containers:
+            - name: cleanup
+              image: datadigest
+              imagePullPolicy: IfNotPresent
+              command: ["python", "-m", "datadigest.cleanup"]
+              envFrom:
+                - configMapRef: { name: datadigest-config }
+                - secretRef: { name: datadigest-secret }

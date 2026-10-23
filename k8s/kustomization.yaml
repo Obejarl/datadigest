@@ -1,0 +1,22 @@
+# kubectl apply -k k8s/
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: datadigest
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: datadigest
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - secret.yaml          # copy secret.example.yaml to secret.yaml first (it is gitignored)
+  - postgres.yaml
+  - redis.yaml
+  - migrate-job.yaml
+  - api.yaml
+  - worker.yaml
+  - worker-hpa.yaml
+  - cleanup-cronjob.yaml
+# ingress.yaml is optional: it needs an ingress controller (see README).
+images:
+  - name: datadigest
+    newTag: "0.1.0"
