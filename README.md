@@ -11,7 +11,9 @@ Built as a small but complete service: a REST API, a background worker behind a 
 queue, PostgreSQL, Docker Compose, Kubernetes manifests (with autoscaling and a CronJob)
 and CI that tests against real databases.
 
-![Dashboard](docs/dashboard.png)
+![Dataset overview](docs/dashboard.png)
+
+![Column cards](docs/columns.png)
 
 ## What it does
 
@@ -24,8 +26,13 @@ and CI that tests against real databases.
 - **Flags data-quality problems.** These include duplicate rows, heavily missing columns,
   constant columns, likely ID columns, skewed distributions, outliers (IQR rule) and highly
   correlated pairs.
+- **Scores data quality.** Every file gets a 0-100 quality score with an A-D grade, built
+  from missing cells, duplicates and weighted warnings
+  ([`quality_score`](datadigest/core/profile.py)).
 - **Reports.** You get an interactive dashboard and a single-file HTML report. Both are
-  drawn from the same Plotly specs.
+  drawn from the same Plotly specs. The dashboard has tabs for overview, column cards
+  with type filters, and correlations. Tab links are shareable (`#columns`), and the
+  `1` `2` `3` keys switch tabs.
 
 ## Architecture
 
@@ -69,6 +76,7 @@ One Docker image runs every role:
 | `GET` | `/api/datasets/{id}/charts` | Plotly figure specs |
 | `GET` | `/api/datasets/{id}/report` | HTML report (`?download=true` to save) |
 | `DELETE` | `/api/datasets/{id}` | Delete dataset and file |
+| `GET` | `/api/stats` | Totals for the dashboard: datasets by status, rows, average quality and processing time, mode, queue depth |
 | `GET` | `/healthz`, `/readyz` | Liveness / readiness |
 
 Interactive docs: `http://localhost:8000/docs`
@@ -101,8 +109,8 @@ docker compose up --build
 ### 4. Kubernetes (Docker Desktop, kind or minikube)
 
 ```bash
-docker build -t datadigest:0.1.0 .
-# kind: kind load docker-image datadigest:0.1.0   minikube: minikube image load datadigest:0.1.0
+docker build -t datadigest:0.2.0 .
+# kind: kind load docker-image datadigest:0.2.0   minikube: minikube image load datadigest:0.2.0
 cp k8s/secret.example.yaml k8s/secret.yaml           # then change the password
 kubectl apply -k k8s/
 kubectl -n datadigest get pods -w

@@ -4,32 +4,63 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DataDigest</title>
+<meta name="description" content="Upload a CSV and get an automatic data-quality profile, charts and an HTML report.">
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600;700&display=swap">
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body data-page="index">
-<header class="top"><div class="inner">
-  <a class="brand" href="/">Data<span>Digest</span></a>
-  <nav><a href="/docs">API docs</a></nav>
-</div></header>
+<header class="topbar">
+  <a class="brand" href="/"><img src="/static/logo.svg" alt="" width="32" height="32"><span class="name">DataDigest</span></a>
+  <span class="ver">v0.2</span>
+  <nav class="nav"><a href="/" class="active">Overview</a><a href="/docs">API docs</a></nav>
+  <div class="pills" id="pills"></div>
+  <button class="btn primary" type="button" id="top-upload">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+    Upload CSV
+  </button>
+</header>
+
 <main>
-  <h1>Profile a CSV in seconds</h1>
-  <p class="muted">Upload a file: you get column types, missing values, distributions, correlations, data-quality warnings and a shareable HTML report.</p>
+  <div class="phead">
+    <div>
+      <h1>Data quality, <em>at a glance</em></h1>
+      <p>Drop in a CSV: column types, missing values, distributions, correlations and a quality score, with a report you can share.</p>
+    </div>
+  </div>
+
+  <section class="bento" id="kpis" aria-label="Totals"></section>
 
   <label class="drop" id="drop">
-    <strong>Drop a CSV here or click to choose</strong>
-    <span class="muted">.csv, .tsv or .txt; comma, semicolon, tab or pipe separated</span>
+    <span class="ico">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5M12 18v-6m0 0-2.5 2.5M12 12l2.5 2.5"/></svg>
+    </span>
+    <span class="txt">
+      <strong>Drop a CSV here or click to choose</strong>
+      <span class="muted">.csv, .tsv or .txt up to 10 MB · comma, semicolon, tab or pipe · UTF-8 or Windows-1254</span>
+      <span class="progress" id="progress" hidden><b></b></span>
+    </span>
     <input type="file" id="file" accept=".csv,.tsv,.txt">
   </label>
-  <div id="upload-error" class="notice error" hidden></div>
 
-  <h2>Recent datasets</h2>
-  <div class="table-wrap">
-    <table>
-      <thead><tr><th>File</th><th>Status</th><th>Rows</th><th>Columns</th><th>Warnings</th><th>Size</th><th>Uploaded</th></tr></thead>
-      <tbody id="datasets"></tbody>
-    </table>
-  </div>
+  <section class="card">
+    <div class="card-h">
+      <h2 class="card-t">Datasets</h2>
+      <input class="search" id="search" type="search" placeholder="Filter by file name…" aria-label="Filter datasets">
+    </div>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>File</th><th>Status</th><th>Quality</th><th>Rows</th><th>Columns</th><th>Warnings</th><th>Size</th><th>Uploaded</th></tr></thead>
+        <tbody id="datasets"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>DataDigest · FastAPI · Redis · PostgreSQL · Kubernetes</footer>
 </main>
+<div class="toasts" id="toasts" aria-live="polite"></div>
 <script src="/static/app.js"></script>
 </body>
 </html>

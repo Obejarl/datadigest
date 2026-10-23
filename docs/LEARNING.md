@@ -76,7 +76,16 @@ Okuma sırası önerisi: REST → Kuyruk/Worker → Docker → Compose → Kuber
 - `profile` kolonu PostgreSQL'de JSONB, SQLite'ta JSON (`with_variant`).
 - SQLite'ta yabancı anahtarlar varsayılan olarak kapalı. [`db.py`](../datadigest/db.py) içinde `PRAGMA foreign_keys=ON` ile açılıyor, yoksa `ON DELETE CASCADE` çalışmaz.
 
-**Dene:** `alembic downgrade base`, sonra `alembic upgrade head`. Tabloların silinip geri geldiğini gör.
+**Şema evrimi örneği:** Kalite skoru sonradan eklendi. Bunun için
+[`0002_quality_score.py`](../migrations/versions/0002_quality_score.py) migration'ı mevcut tabloya kolon ekliyor ve şunları gösteriyor:
+- **Nullable:** Kolon boş bırakılabilir. Eski satırlar bozulmaz, sadece skorları olmaz. Arayüz de bu durumu "eski sürümle analiz edildi" diye gösterir.
+- **`down_revision = "0001"`:** Migration'lar bir zincir oluşturur. Alembic hangi sırayla uygulanacaklarını buradan bilir.
+- **`batch_alter_table`:** SQLite eski sürümlerde `DROP COLUMN` desteklemez. Batch modu tabloyu yeniden kurarak geri almayı mümkün kılar.
+
+**Dene:**
+- `alembic history`: zinciri görürsün.
+- `alembic downgrade 0001`: kolon gider.
+- `alembic upgrade head`: kolon geri gelir.
 
 ---
 
@@ -99,9 +108,9 @@ Okuma sırası önerisi: REST → Kuyruk/Worker → Docker → Compose → Kuber
 **Dene:**
 
 ```bash
-docker build -t datadigest:0.1.0 .
+docker build -t datadigest:0.2.0 .
 docker image ls datadigest
-docker history datadigest:0.1.0
+docker history datadigest:0.2.0
 ```
 
 Sonra kodda bir satır değiştirip tekrar build et. Hangi katmanların önbellekten geldiğine bak.

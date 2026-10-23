@@ -9,7 +9,10 @@ from __future__ import annotations
 
 from typing import Any
 
-ACCENT = "#4f6bed"
+# One colour per kind of column, matching the dashboard palette.
+CYAN, VIOLET, GREEN, AMBER, RED = "#22D3EE", "#A78BFA", "#10E39A", "#FFC857", "#FF4D6D"
+# Diverging scale for correlations: negative red, zero blends into the dark card, positive cyan.
+CORRELATION_SCALE = [[0.0, RED], [0.5, "#1E293B"], [1.0, CYAN]]
 MAX_COLUMN_CHARTS = 30
 
 
@@ -19,6 +22,7 @@ def _layout(title: str, **extra: Any) -> dict[str, Any]:
         "margin": {"l": 50, "r": 20, "t": 40, "b": 50},
         "height": 300,
         "bargap": 0.05,
+        "font": {"family": "Inter, system-ui, sans-serif", "size": 12},
     }
     layout.update(extra)
     return layout
@@ -39,7 +43,7 @@ def missing_chart(profile: dict) -> dict | None:
             "orientation": "h",
             "x": [c["missing_pct"] for c in cols],
             "y": [c["name"] for c in cols],
-            "marker": {"color": ACCENT},
+            "marker": {"color": AMBER},
             "hovertemplate": "%{y}: %{x}%<extra></extra>",
         }
     ]
@@ -64,7 +68,7 @@ def _histogram(c: dict) -> dict | None:
             "x": centers,
             "y": hist["counts"],
             "width": widths,
-            "marker": {"color": ACCENT},
+            "marker": {"color": CYAN},
             "hovertemplate": "%{x}: %{y}<extra></extra>",
         }
     ]
@@ -81,7 +85,7 @@ def _top_bar(c: dict) -> dict | None:
             "orientation": "h",
             "x": [t["count"] for t in top],
             "y": [t["value"] for t in top],
-            "marker": {"color": ACCENT},
+            "marker": {"color": VIOLET},
             "hovertemplate": "%{y}: %{x}<extra></extra>",
         }
     ]
@@ -97,10 +101,12 @@ def _timeline(c: dict) -> dict | None:
     data = [
         {
             "type": "scatter",
-            "mode": "lines+markers",
+            "mode": "lines",
+            "fill": "tozeroy",
+            "fillcolor": "rgba(16,227,154,0.12)",
             "x": timeline["labels"],
             "y": timeline["counts"],
-            "line": {"color": ACCENT},
+            "line": {"color": GREEN, "width": 2, "shape": "spline"},
             "hovertemplate": "%{x}: %{y}<extra></extra>",
         }
     ]
@@ -120,8 +126,9 @@ def correlation_chart(profile: dict) -> dict | None:
             "y": corr["columns"],
             "zmin": -1,
             "zmax": 1,
-            "colorscale": "RdBu",
-            "reversescale": True,
+            "colorscale": CORRELATION_SCALE,
+            "xgap": 2,
+            "ygap": 2,
             "hovertemplate": "%{x} × %{y}: %{z:.2f}<extra></extra>",
         }
     ]
