@@ -67,3 +67,26 @@ def test_readyz_with_real_services(stack):
     r = client.get("/readyz")
     assert r.status_code == 200
     assert r.json()["checks"] == {"database": "ok", "redis": "ok"}
+
+
+@pytest.mark.parametrize("kind", ["production", "transport", "assignment", "knapsack"])
+def test_optimization_through_queue_and_postgres(stack, monkeypatch, kind):
+    client, redis, factory = stack
+    from datadigest.config import get_settings
+
+    monkeypatch.setattr(get_settings(), "queue_name", QUEUE)
+    opt_id = client.post(f"/api/optimize/examples/{kind}").json()["id"]
+    assert jobqueue.depth(redis, QUEUE) == 2  # profile the example file, then solve
+
+    worker = Worker(redis, factory, QUEUE)
+    while worker.run_once(timeout=2):
+        pass
+    opt = client.get(f"/api/optimizations/{opt_id}").json()  # result stored and read back as JSONB
+    assert opt["status"] == "done", opt["error"]
+    assert opt["result_status"] == "optimal"
+    assert opt["result"]["insights"] and opt["started_at"] and opt["finished_at"]
+
+    capacity = client.get("/api/capacity").json()  # measured from real timestamps
+    assert capacity["measured"]["service_samples"] >= 2
+    assert client.delete(f"/api/datasets/{opt['dataset_id']}").status_code == 204  # cascades to the run
+    assert client.get(f"/api/optimizations/{opt_id}").status_code == 404
