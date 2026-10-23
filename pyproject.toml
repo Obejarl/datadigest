@@ -1,0 +1,19 @@
+[project]
+name = "datadigest"
+version = "0.1.0"
+description = "Upload a CSV, get an automatic data-quality profile, charts and an HTML report."
+requires-python = ">=3.13"
+license = "MIT"
+
+[tool.ruff]
+line-length = 110
+target-version = "py313"
+extend-exclude = ["migrations/versions"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B", "SIM"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = ["integration: needs real PostgreSQL and Redis (TEST_DATABASE_URL, TEST_REDIS_URL)"]
+filterwarnings = ["ignore::DeprecationWarning:starlette.*"]

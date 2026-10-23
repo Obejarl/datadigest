@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} · DataDigest report</title>
+<script src="{{ plotly_js }}"></script>
+<style>
+  :root { --bg:#f7f8fa; --card:#fff; --text:#1d2330; --muted:#667085; --border:#e4e7ec;
+          --accent:#4f6bed; --warn:#b54708; --warn-bg:#fffaeb; }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg:#111318; --card:#1a1d24; --text:#e6e8ee; --muted:#98a2b3; --border:#2b303b;
+            --warn:#fdb022; --warn-bg:#2a2112; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif; background:var(--bg); color:var(--text); }
+  main { max-width:1100px; margin:0 auto; padding:32px 16px 64px; }
+  h1 { margin:0 0 4px; font-size:26px; }
+  h2 { margin:40px 0 12px; font-size:19px; }
+  .muted { color:var(--muted); }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:12px; margin-top:20px; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:14px 16px; }
+  .card .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
+  .card .v { font-size:22px; font-weight:600; font-variant-numeric:tabular-nums; }
+  .warn { background:var(--warn-bg); color:var(--warn); border-radius:8px; padding:8px 12px; margin:6px 0; }
+  table { width:100%; border-collapse:collapse; background:var(--card); border:1px solid var(--border); border-radius:10px; overflow:hidden; }
+  th, td { text-align:left; padding:8px 12px; border-bottom:1px solid var(--border); font-variant-numeric:tabular-nums; }
+  th { font-size:12px; text-transform:uppercase; color:var(--muted); letter-spacing:.04em; }
+  .table-wrap { overflow-x:auto; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border); }
+  .col { background:var(--card); border:1px solid var(--border); border-radius:10px; padding:16px; margin:12px 0; }
+  .col-grid { display:grid; grid-template-columns:minmax(220px,1fr) 2fr; gap:16px; }
+  @media (max-width: 720px) { .col-grid { grid-template-columns:1fr; } }
+  dl { display:grid; grid-template-columns:auto 1fr; gap:2px 12px; margin:0; font-size:14px; }
+  dt { color:var(--muted); } dd { margin:0; font-variant-numeric:tabular-nums; }
+  .chart { min-height:300px; }
+  footer { margin-top:48px; font-size:13px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>{{ title }}</h1>
+  <div class="muted">Generated {{ generated_at }} by DataDigest</div>
+
+  <div class="cards">
+    <div class="card"><div class="k">Rows</div><div class="v">{{ "{:,}".format(summary.rows) }}</div></div>
+    <div class="card"><div class="k">Columns</div><div class="v">{{ summary.columns }}</div></div>
+    <div class="card"><div class="k">Missing cells</div><div class="v">{{ summary.missing_cells_pct }}%</div></div>
+    <div class="card"><div class="k">Duplicate rows</div><div class="v">{{ summary.duplicate_rows }}</div></div>
+    <div class="card"><div class="k">Memory</div><div class="v">{{ summary.memory_bytes | filesize }}</div></div>
+  </div>
+  <p class="muted">
+    Encoding <b>{{ summary.encoding }}</b> · delimiter <b>{{ "TAB" if summary.delimiter == "\t" else summary.delimiter }}</b>
+    {% for kind, n in summary.kinds.items() %} · {{ n }} {{ kind }}{% endfor %}
+    {% if summary.truncated %} · <b>truncated</b> to the row limit{% endif %}
+  </p>
+
+  <h2>Warnings ({{ profile.warnings | length }})</h2>
+  {% for w in profile.warnings %}<div class="warn">{{ w.message }}</div>{% else %}<p class="muted">No issues found.</p>{% endfor %}
+
+  <h2>Columns</h2>
+  <div class="table-wrap"><table>
+    <tr><th>Name</th><th>Type</th><th>Missing</th><th>Unique</th></tr>
+    {% for c in profile.columns %}
+    <tr><td><a href="#col-{{ loop.index }}">{{ c.name }}</a></td><td><span class="pill">{{ c.kind }}</span></td>
+        <td>{{ c.missing_pct }}%</td><td>{{ c.unique }}</td></tr>
+    {% endfor %}
+  </table></div>
+
+  {% if overview_charts %}
+  <h2>Overview</h2>
+  {% for chart in overview_charts %}<div class="col"><div class="chart" data-chart="{{ chart.id }}"></div></div>{% endfor %}
+  {% endif %}
+
+  <h2>Column details</h2>
+  {% for c in profile.columns %}
+  <section class="col" id="col-{{ loop.index }}">
+    <h3 style="margin:0 0 10px">{{ c.name }} <span class="pill">{{ c.kind }}</span></h3>
+    <div class="col-grid">
+      <dl>
+        <dt>Missing</dt><dd>{{ c.missing }} ({{ c.missing_pct }}%)</dd>
+        <dt>Unique</dt><dd>{{ c.unique }}</dd>
+        {% if c.kind == "numeric" %}
+          {% for key in ["mean", "std", "min", "p25", "median", "p75", "max", "skew", "outliers"] %}
+            {% if c[key] is not none %}<dt>{{ key }}</dt><dd>{{ "%.4g" | format(c[key]) }}</dd>{% endif %}
+          {% endfor %}
+        {% elif c.kind == "datetime" %}
+          <dt>From</dt><dd>{{ c.min }}</dd><dt>To</dt><dd>{{ c.max }}</dd><dt>Span</dt><dd>{{ c.span_days }} days</dd>
+        {% elif c.kind == "text" %}
+          <dt>Avg length</dt><dd>{{ c.avg_length }}</dd>
+          {% for ex in c.examples %}<dt>Example</dt><dd>{{ ex }}</dd>{% endfor %}
+        {% else %}
+          {% for t in c.top[:5] %}<dt>{{ t.value }}</dt><dd>{{ t.count }}</dd>{% endfor %}
+        {% endif %}
+      </dl>
+      {% if column_charts.get(c.name) %}<div class="chart" data-chart="{{ column_charts[c.name].id }}"></div>{% else %}<div></div>{% endif %}
+    </div>
+  </section>
+  {% endfor %}
+
+  <footer class="muted">DataDigest · automatic CSV profiling</footer>
+</main>
+<script>
+  // tojson escapes <, > and & so user data cannot close this script tag.
+  const CHARTS = {{ charts | tojson }};
+  const css = getComputedStyle(document.documentElement);
+  const theme = { paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+                  font: { color: css.getPropertyValue("--text").trim() } };
+  for (const chart of CHARTS) {
+    const el = document.querySelector(`[data-chart="${CSS.escape(chart.id)}"]`);
+    if (el && window.Plotly) {
+      Plotly.newPlot(el, chart.figure.data, { ...chart.figure.layout, ...theme },
+                     { responsive: true, displaylogo: false });
+    }
+  }
+</script>
+</body>
+</html>
