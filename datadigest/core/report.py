@@ -44,3 +44,13 @@ def render_report(profile: dict, title: str) -> str:
         generated_at=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
         plotly_js=PLOTLY_JS,
     )
+
+
+def render_optimization_report(result: dict, title: str, kind_title: str) -> str:
+    return _env.get_template("optimization.html.j2").render(
+        title=title,
+        kind_title=kind_title,
+        r=result,
+        generated_at=datetime.now(UTC).strftime("%Y-%m-%d %H:%M UTC"),
+        plotly_js=PLOTLY_JS,
+    )

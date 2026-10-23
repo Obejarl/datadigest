@@ -13,13 +13,19 @@ from tests.conftest import upload
 QUEUE = "datadigest:jobs"
 
 
-def test_queue_is_fifo(redis):
+def test_queue_is_fifo_and_carries_the_job_kind(redis):
     a, b = uuid.uuid4(), uuid.uuid4()
     jobqueue.enqueue(redis, QUEUE, a)
-    jobqueue.enqueue(redis, QUEUE, b)
+    jobqueue.enqueue(redis, QUEUE, b, kind="optimization")
     assert jobqueue.depth(redis, QUEUE) == 2
-    assert jobqueue.dequeue(redis, QUEUE, timeout=1) == a
-    assert jobqueue.dequeue(redis, QUEUE, timeout=1) == b
+    assert jobqueue.dequeue(redis, QUEUE, timeout=1) == ("dataset", a)
+    assert jobqueue.dequeue(redis, QUEUE, timeout=1) == ("optimization", b)
+
+
+def test_queue_reads_bare_ids_from_older_versions(redis):
+    a = uuid.uuid4()
+    redis.lpush(QUEUE, str(a))
+    assert jobqueue.dequeue(redis, QUEUE, timeout=1) == ("dataset", a)
 
 
 def test_worker_processes_queued_upload(queued_client, redis, factory):

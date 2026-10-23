@@ -19,6 +19,8 @@ class Settings(BaseSettings):
     stuck_after_minutes: int = 15
     # Bundled demo files offered on the dashboard ("Try a sample").
     samples_dir: str = "samples"
+    # Upper bound for one solver run; HiGHS returns its best plan so far when it is reached.
+    opt_time_limit_seconds: float = 10.0
 
     @property
     def max_upload_bytes(self) -> int:

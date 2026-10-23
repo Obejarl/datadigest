@@ -19,7 +19,7 @@ from sqlalchemy.orm import sessionmaker
 
 from datadigest.config import get_settings
 from datadigest.db import SessionLocal
-from datadigest.models import Dataset, Status, utcnow
+from datadigest.models import Dataset, Optimization, Status, utcnow
 
 log = logging.getLogger("datadigest.cleanup")
 
@@ -38,15 +38,18 @@ STUCK_MESSAGE = "Processing did not finish (the worker may have stopped). Try ru
 
 def fail_stuck(factory: sessionmaker, minutes: int, now: datetime | None = None) -> int:
     cutoff = (now or utcnow()) - timedelta(minutes=minutes)
-    started = func.coalesce(Dataset.queued_at, Dataset.created_at)
+    failed = 0
     with factory() as db:
-        result = db.execute(
-            update(Dataset)
-            .where(Dataset.status.in_([Status.QUEUED, Status.PROCESSING]), started < cutoff)
-            .values(status=Status.FAILED, error=STUCK_MESSAGE, finished_at=now or utcnow())
-        )
+        for model in (Dataset, Optimization):
+            started = func.coalesce(model.queued_at, model.created_at)
+            result = db.execute(
+                update(model)
+                .where(model.status.in_([Status.QUEUED, Status.PROCESSING]), started < cutoff)
+                .values(status=Status.FAILED, error=STUCK_MESSAGE, finished_at=now or utcnow())
+            )
+            failed += result.rowcount
         db.commit()
-        return result.rowcount
+    return failed
 
 
 def main() -> int:

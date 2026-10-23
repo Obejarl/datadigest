@@ -18,9 +18,11 @@ from sqlalchemy.orm import sessionmaker
 from datadigest import jobqueue
 from datadigest.config import get_settings
 from datadigest.db import SessionLocal
-from datadigest.jobs import process_dataset
+from datadigest.jobs import process_dataset, process_optimization
 
 log = logging.getLogger("datadigest.worker")
+
+HANDLERS = {"dataset": process_dataset, "optimization": process_optimization}
 
 
 class Worker:
@@ -36,10 +38,14 @@ class Worker:
 
     def run_once(self, timeout: int = 5) -> bool:
         """Process at most one job. Returns False if the queue stayed empty for `timeout` seconds."""
-        dataset_id = jobqueue.dequeue(self.redis, self.queue, timeout=timeout)
-        if dataset_id is None:
+        job = jobqueue.dequeue(self.redis, self.queue, timeout=timeout)
+        if job is None:
             return False
-        process_dataset(dataset_id, self.factory)
+        handler = HANDLERS.get(job.kind)
+        if handler is None:
+            log.error("unknown job kind %r for %s, dropping it", job.kind, job.id)
+            return True
+        handler(job.id, self.factory)
         return True
 
     def run_forever(self) -> None:

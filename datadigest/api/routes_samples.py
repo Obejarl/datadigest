@@ -20,6 +20,8 @@ SAMPLES = {
     "sales.csv": "1,005 synthetic orders with missing values, outliers and duplicate rows",
     "tr_survey.csv": "A Turkish Excel export: ';' separated, Windows-1254, decimal commas",
 }
+# Inputs for the optimizer examples; loadable by name but not listed on the profiling page.
+OPTIMIZER_SAMPLES = {"opt_production.csv", "opt_transport.csv", "opt_assignment.csv", "opt_projects.csv"}
 
 
 class SampleOut(BaseModel):
@@ -51,7 +53,7 @@ def load_sample(
     settings: Settings = Depends(get_settings),
 ):
     path = _path(settings, name)
-    if name not in SAMPLES or not path.is_file():
+    if (name not in SAMPLES and name not in OPTIMIZER_SAMPLES) or not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown sample")
     dataset = create_dataset(db, name, path.read_bytes())
     schedule(dataset.id, background, factory, redis, settings)

@@ -88,7 +88,7 @@ def test_not_found_and_invalid_id(client):
 
 def test_upload_in_worker_mode_is_queued(queued_client, redis):
     dataset_id = upload(queued_client).json()["id"]
-    assert redis.lrange("datadigest:jobs", 0, -1) == [dataset_id]
+    assert redis.lrange("datadigest:jobs", 0, -1) == [f"dataset:{dataset_id}"]
     assert queued_client.get(f"/api/datasets/{dataset_id}").json()["status"] == "queued"
 
 

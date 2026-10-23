@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from datadigest.api import routes_datasets, routes_health, routes_samples, routes_stats
+from datadigest.api import routes_datasets, routes_health, routes_optimize, routes_samples, routes_stats
 
 STATIC = Path(__file__).parent.parent / "static"
 
@@ -20,6 +20,7 @@ app.include_router(routes_health.router)
 app.include_router(routes_datasets.router)
 app.include_router(routes_stats.router)
 app.include_router(routes_samples.router)
+app.include_router(routes_optimize.router)
 
 
 @app.middleware("http")
@@ -43,3 +44,18 @@ def index():
 @app.get("/datasets/{dataset_id}", include_in_schema=False)
 def dataset_page(dataset_id: str):
     return FileResponse(STATIC / "dataset.html")
+
+
+@app.get("/optimize", include_in_schema=False)
+def optimize_page():
+    return FileResponse(STATIC / "optimize.html")
+
+
+@app.get("/optimizations/{opt_id}", include_in_schema=False)
+def optimization_page(opt_id: str):
+    return FileResponse(STATIC / "optimization.html")
+
+
+@app.get("/capacity", include_in_schema=False)
+def capacity_page():
+    return FileResponse(STATIC / "capacity.html")

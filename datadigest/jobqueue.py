@@ -9,6 +9,7 @@ of this same idea.
 from __future__ import annotations
 
 import uuid
+from typing import NamedTuple
 
 from redis import Redis
 
@@ -17,13 +18,21 @@ def connect(url: str) -> Redis:
     return Redis.from_url(url, decode_responses=True)
 
 
-def enqueue(redis: Redis, queue: str, dataset_id: uuid.UUID) -> None:
-    redis.lpush(queue, str(dataset_id))
+class Job(NamedTuple):
+    kind: str  # "dataset" (profile a file) or "optimization" (run a solver)
+    id: uuid.UUID
 
 
-def dequeue(redis: Redis, queue: str, timeout: int = 5) -> uuid.UUID | None:
+def enqueue(redis: Redis, queue: str, job_id: uuid.UUID, kind: str = "dataset") -> None:
+    redis.lpush(queue, f"{kind}:{job_id}")
+
+
+def dequeue(redis: Redis, queue: str, timeout: int = 5) -> Job | None:
     item = redis.brpop([queue], timeout=timeout)
-    return uuid.UUID(item[1]) if item else None
+    if not item:
+        return None
+    kind, _, raw = item[1].rpartition(":")
+    return Job(kind or "dataset", uuid.UUID(raw))  # bare ids were queued by older versions
 
 
 def depth(redis: Redis, queue: str) -> int:

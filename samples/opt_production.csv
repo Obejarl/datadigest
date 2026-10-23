@@ -1,0 +1,9 @@
+product,profit,machine_hours,labor_hours,wood_kg,min_qty,max_qty
+Chair,45,1.5,2.0,4,20,200
+Table,120,4.0,5.0,15,5,60
+Desk,150,5.0,6.0,18,0,40
+Bookshelf,95,3.0,4.0,12,0,80
+Bed,210,6.0,8.0,25,0,30
+Stool,25,0.8,1.0,2,0,300
+Cabinet,130,4.5,5.5,14,0,50
+Nightstand,60,2.0,2.5,6,0,100

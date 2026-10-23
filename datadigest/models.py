@@ -2,7 +2,7 @@ import enum
 import uuid
 from datetime import UTC, datetime
 
-from sqlalchemy import JSON, DateTime, ForeignKey, Integer, LargeBinary, String
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, LargeBinary, String
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -40,6 +40,8 @@ class Dataset(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
     # Set on upload and again on every re-run: the start of the current attempt.
     queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # queued_at -> started_at is time waiting in the queue, started_at -> finished_at is service time.
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
 
     file: Mapped["DatasetFile"] = relationship(cascade="all, delete-orphan", passive_deletes=True)
@@ -54,3 +56,28 @@ class DatasetFile(Base):
         ForeignKey("datasets.id", ondelete="CASCADE"), primary_key=True
     )
     content: Mapped[bytes] = mapped_column(LargeBinary)
+
+
+class Optimization(Base):
+    """One solver run (production plan, transport plan, ...) on a dataset's raw file."""
+
+    __tablename__ = "optimizations"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    dataset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("datasets.id", ondelete="CASCADE"), index=True)
+    kind: Mapped[str] = mapped_column(String(32))
+    name: Mapped[str] = mapped_column(String(255))
+    params: Mapped[dict] = mapped_column(JSON().with_variant(JSONB(), "postgresql"))
+    status: Mapped[str] = mapped_column(String(16), default=Status.QUEUED, index=True)
+    error: Mapped[str | None] = mapped_column(String(500), default=None)
+    # Copied out of the result so lists do not need to load it.
+    result_status: Mapped[str | None] = mapped_column(String(16), default=None)
+    objective: Mapped[float | None] = mapped_column(Float, default=None)
+    uplift_pct: Mapped[float | None] = mapped_column(Float, default=None)
+    result: Mapped[dict | None] = mapped_column(
+        JSON().with_variant(JSONB(), "postgresql"), default=None, deferred=True
+    )
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow, index=True)
+    queued_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=utcnow)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
