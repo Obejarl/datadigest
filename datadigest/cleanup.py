@@ -1,6 +1,6 @@
 """Delete datasets older than RETENTION_DAYS. Runs as a Kubernetes CronJob.
 
-    python -m datadigest.cleanup
+python -m datadigest.cleanup
 """
 
 from __future__ import annotations

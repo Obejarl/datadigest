@@ -71,7 +71,9 @@ def main() -> int:
         for name, d in by_kind.get(kind, {}).items():
             selector = d["spec"]["selector"]["matchLabels"]
             labels = d["spec"]["template"]["metadata"]["labels"]
-            check(selector.items() <= labels.items(), f"{kind}/{name}: selector {selector} != labels {labels}")
+            check(
+                selector.items() <= labels.items(), f"{kind}/{name}: selector {selector} != labels {labels}"
+            )
             workloads[name] = d
 
     for d in docs:
@@ -81,26 +83,42 @@ def main() -> int:
         for c in spec["containers"]:
             for ref in c.get("envFrom", []):
                 if "configMapRef" in ref:
-                    check(ref["configMapRef"]["name"] in by_kind["ConfigMap"], f"unknown ConfigMap in {d['kind']}")
+                    check(
+                        ref["configMapRef"]["name"] in by_kind["ConfigMap"],
+                        f"unknown ConfigMap in {d['kind']}",
+                    )
                 if "secretRef" in ref:
                     check(ref["secretRef"]["name"] in by_kind["Secret"], f"unknown Secret in {d['kind']}")
             if c["image"].startswith("datadigest"):
-                check(c.get("imagePullPolicy") == "IfNotPresent",
-                      f"{d['kind']}/{d['metadata']['name']}: local image needs imagePullPolicy IfNotPresent")
+                check(
+                    c.get("imagePullPolicy") == "IfNotPresent",
+                    f"{d['kind']}/{d['metadata']['name']}: local image needs imagePullPolicy IfNotPresent",
+                )
             if d["kind"] != "Job" and d["kind"] != "CronJob":
-                check("resources" in c and "requests" in c["resources"],
-                      f"{d['kind']}/{d['metadata']['name']}: missing resource requests")
+                check(
+                    "resources" in c and "requests" in c["resources"],
+                    f"{d['kind']}/{d['metadata']['name']}: missing resource requests",
+                )
 
     for name, svc in by_kind.get("Service", {}).items():
         selector = svc["spec"]["selector"]
-        targets = [w for w in workloads.values()
-                   if selector.items() <= w["spec"]["template"]["metadata"]["labels"].items()]
+        targets = [
+            w
+            for w in workloads.values()
+            if selector.items() <= w["spec"]["template"]["metadata"]["labels"].items()
+        ]
         check(len(targets) == 1, f"Service/{name} selector {selector} matches {len(targets)} workloads")
         if targets:
-            ports = {p["containerPort"] for c in targets[0]["spec"]["template"]["spec"]["containers"]
-                     for p in c.get("ports", [])}
+            ports = {
+                p["containerPort"]
+                for c in targets[0]["spec"]["template"]["spec"]["containers"]
+                for p in c.get("ports", [])
+            }
             for p in svc["spec"]["ports"]:
-                check(p.get("targetPort", p["port"]) in ports, f"Service/{name} targets a port no container opens")
+                check(
+                    p.get("targetPort", p["port"]) in ports,
+                    f"Service/{name} targets a port no container opens",
+                )
 
     for name, hpa in by_kind.get("HorizontalPodAutoscaler", {}).items():
         target = hpa["spec"]["scaleTargetRef"]
@@ -109,10 +127,15 @@ def main() -> int:
         check("cpu" in container["resources"]["requests"], f"HPA/{name}: target has no CPU request")
 
     secret_url = by_kind["Secret"]["datadigest-secret"]["stringData"]["DATABASE_URL"]
-    check("@postgres:5432/" in secret_url and "postgres" in by_kind["Service"],
-          "DATABASE_URL must point at the postgres Service")
+    check(
+        "@postgres:5432/" in secret_url and "postgres" in by_kind["Service"],
+        "DATABASE_URL must point at the postgres Service",
+    )
     redis_url = by_kind["ConfigMap"]["datadigest-config"]["data"]["REDIS_URL"]
-    check("//redis:6379" in redis_url and "redis" in by_kind["Service"], "REDIS_URL must point at the redis Service")
+    check(
+        "//redis:6379" in redis_url and "redis" in by_kind["Service"],
+        "REDIS_URL must point at the redis Service",
+    )
 
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     for name in ("postgres", "redis", "migrate", "api", "worker"):

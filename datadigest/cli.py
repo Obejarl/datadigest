@@ -1,7 +1,7 @@
 """Offline usage, no services needed.
 
-    python -m datadigest.cli report data.csv -o report.html
-    python -m datadigest.cli profile data.csv
+python -m datadigest.cli report data.csv -o report.html
+python -m datadigest.cli profile data.csv
 """
 
 from __future__ import annotations

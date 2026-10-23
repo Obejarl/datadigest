@@ -33,16 +33,21 @@ def missing_chart(profile: dict) -> dict | None:
     if not cols:
         return None
     cols.sort(key=lambda c: c["missing_pct"])
-    data = [{
-        "type": "bar",
-        "orientation": "h",
-        "x": [c["missing_pct"] for c in cols],
-        "y": [c["name"] for c in cols],
-        "marker": {"color": ACCENT},
-        "hovertemplate": "%{y}: %{x}%<extra></extra>",
-    }]
-    layout = _layout("Missing values (%)", height=max(220, 26 * len(cols) + 80),
-                     margin={"l": 140, "r": 20, "t": 40, "b": 40})
+    data = [
+        {
+            "type": "bar",
+            "orientation": "h",
+            "x": [c["missing_pct"] for c in cols],
+            "y": [c["name"] for c in cols],
+            "marker": {"color": ACCENT},
+            "hovertemplate": "%{y}: %{x}%<extra></extra>",
+        }
+    ]
+    layout = _layout(
+        "Missing values (%)",
+        height=max(220, 26 * len(cols) + 80),
+        margin={"l": 140, "r": 20, "t": 40, "b": 40},
+    )
     return _chart("missing", "Missing values", data, layout)
 
 
@@ -53,11 +58,16 @@ def _histogram(c: dict) -> dict | None:
     edges = hist["edges"]
     centers = [(a + b) / 2 for a, b in zip(edges[:-1], edges[1:], strict=True)]
     widths = [b - a for a, b in zip(edges[:-1], edges[1:], strict=True)]
-    data = [{
-        "type": "bar", "x": centers, "y": hist["counts"], "width": widths,
-        "marker": {"color": ACCENT},
-        "hovertemplate": "%{x}: %{y}<extra></extra>",
-    }]
+    data = [
+        {
+            "type": "bar",
+            "x": centers,
+            "y": hist["counts"],
+            "width": widths,
+            "marker": {"color": ACCENT},
+            "hovertemplate": "%{x}: %{y}<extra></extra>",
+        }
+    ]
     return _chart(f"col-{c['name']}", c["name"], data, _layout(f"{c['name']} — distribution"), c["name"])
 
 
@@ -65,12 +75,16 @@ def _top_bar(c: dict) -> dict | None:
     top = list(reversed(c.get("top", [])))
     if not top:
         return None
-    data = [{
-        "type": "bar", "orientation": "h",
-        "x": [t["count"] for t in top], "y": [t["value"] for t in top],
-        "marker": {"color": ACCENT},
-        "hovertemplate": "%{y}: %{x}<extra></extra>",
-    }]
+    data = [
+        {
+            "type": "bar",
+            "orientation": "h",
+            "x": [t["count"] for t in top],
+            "y": [t["value"] for t in top],
+            "marker": {"color": ACCENT},
+            "hovertemplate": "%{y}: %{x}<extra></extra>",
+        }
+    ]
     layout = _layout(f"{c['name']} — top values", margin={"l": 140, "r": 20, "t": 40, "b": 40})
     return _chart(f"col-{c['name']}", c["name"], data, layout, c["name"])
 
@@ -80,12 +94,16 @@ def _timeline(c: dict) -> dict | None:
     if not timeline:
         return None
     unit = "month" if timeline["freq"] == "M" else "day"
-    data = [{
-        "type": "scatter", "mode": "lines+markers",
-        "x": timeline["labels"], "y": timeline["counts"],
-        "line": {"color": ACCENT},
-        "hovertemplate": "%{x}: %{y}<extra></extra>",
-    }]
+    data = [
+        {
+            "type": "scatter",
+            "mode": "lines+markers",
+            "x": timeline["labels"],
+            "y": timeline["counts"],
+            "line": {"color": ACCENT},
+            "hovertemplate": "%{x}: %{y}<extra></extra>",
+        }
+    ]
     return _chart(f"col-{c['name']}", c["name"], data, _layout(f"{c['name']} — rows per {unit}"), c["name"])
 
 
@@ -94,14 +112,21 @@ def correlation_chart(profile: dict) -> dict | None:
     if not corr:
         return None
     n = len(corr["columns"])
-    data = [{
-        "type": "heatmap", "z": corr["matrix"], "x": corr["columns"], "y": corr["columns"],
-        "zmin": -1, "zmax": 1, "colorscale": "RdBu", "reversescale": True,
-        "hovertemplate": "%{x} × %{y}: %{z:.2f}<extra></extra>",
-    }]
+    data = [
+        {
+            "type": "heatmap",
+            "z": corr["matrix"],
+            "x": corr["columns"],
+            "y": corr["columns"],
+            "zmin": -1,
+            "zmax": 1,
+            "colorscale": "RdBu",
+            "reversescale": True,
+            "hovertemplate": "%{x} × %{y}: %{z:.2f}<extra></extra>",
+        }
+    ]
     size = max(320, 40 * n + 160)
-    layout = _layout("Correlation (Pearson)", height=size,
-                     margin={"l": 120, "r": 20, "t": 40, "b": 120})
+    layout = _layout("Correlation (Pearson)", height=size, margin={"l": 120, "r": 20, "t": 40, "b": 120})
     return _chart("correlation", "Correlation", data, layout)
 
 

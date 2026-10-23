@@ -29,9 +29,7 @@ async def _read_limited(upload: UploadFile, limit: int) -> bytes:
     while chunk := await upload.read(CHUNK):
         data.extend(chunk)
         if len(data) > limit:
-            raise HTTPException(
-                status.HTTP_413_CONTENT_TOO_LARGE, f"File is larger than {limit // CHUNK} MB"
-            )
+            raise HTTPException(status.HTTP_413_CONTENT_TOO_LARGE, f"File is larger than {limit // CHUNK} MB")
     return bytes(data)
 
 

@@ -51,8 +51,13 @@ def test_stop_ends_run_forever(redis, factory):
 
 def _add(factory, age_days: int) -> uuid.UUID:
     with factory() as db:
-        dataset = Dataset(name="x", filename="x.csv", size_bytes=1, status=Status.DONE,
-                          created_at=utcnow() - timedelta(days=age_days))
+        dataset = Dataset(
+            name="x",
+            filename="x.csv",
+            size_bytes=1,
+            status=Status.DONE,
+            created_at=utcnow() - timedelta(days=age_days),
+        )
         dataset.file = DatasetFile(content=b"a\n1\n")
         db.add(dataset)
         db.commit()

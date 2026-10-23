@@ -20,6 +20,7 @@ def column(profile: dict, name: str) -> dict:
 
 # --- loader ---------------------------------------------------------------
 
+
 @pytest.mark.parametrize("delimiter", [",", ";", "\t", "|"])
 def test_detects_delimiter(delimiter):
     text = "\n".join(delimiter.join(row) for row in [["a", "b", "c"], ["1", "2", "3"], ["4", "5", "6"]])
@@ -51,13 +52,22 @@ def test_rejects_empty_files(raw):
 
 # --- profile --------------------------------------------------------------
 
+
 def test_infers_column_kinds():
-    rows = [f"{i},{i * 1.5},{'yes' if i % 2 else 'no'},2025-01-{i % 28 + 1:02d},{'ab'[i % 2]},note {i}"
-            for i in range(60)]
+    rows = [
+        f"{i},{i * 1.5},{'yes' if i % 2 else 'no'},2025-01-{i % 28 + 1:02d},{'ab'[i % 2]},note {i}"
+        for i in range(60)
+    ]
     p = profile_of("id,price,active,day,group,comment\n" + "\n".join(rows))
     kinds = {c["name"]: c["kind"] for c in p["columns"]}
-    assert kinds == {"id": "numeric", "price": "numeric", "active": "boolean",
-                     "day": "datetime", "group": "categorical", "comment": "text"}
+    assert kinds == {
+        "id": "numeric",
+        "price": "numeric",
+        "active": "boolean",
+        "day": "datetime",
+        "group": "categorical",
+        "comment": "text",
+    }
 
 
 def test_numeric_stats_and_histogram():
@@ -73,6 +83,7 @@ def test_missing_values_and_json_safety():
     assert column(p, "b")["missing"] == 2
     assert p["summary"]["missing_cells"] == 2
     import json
+
     json.dumps(p, allow_nan=False)  # NaN would break JSON responses and JSON columns
 
 
@@ -103,6 +114,7 @@ def test_sample_files_profile_cleanly():
 
 
 # --- charts & report ------------------------------------------------------
+
 
 def test_charts_cover_columns_and_overview():
     p = build_profile(load_csv((SAMPLES / "sales.csv").read_bytes()))
