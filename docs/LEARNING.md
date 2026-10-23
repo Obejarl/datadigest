@@ -53,7 +53,7 @@ Okuma sırası önerisi: REST → Kuyruk/Worker → Docker → Compose → Kuber
 
 **SIGTERM:** Kubernetes bir pod'u kapatırken önce SIGTERM gönderir, `terminationGracePeriodSeconds` kadar bekler, sonra öldürür. Worker sinyali yakalayıp elindeki işi bitirir, sonra çıkar. Bunun için [`Worker.stop`](../datadigest/worker.py)'a bak.
 
-**Bilinen zayıflık:** Worker iş ortasında çökerse iş kaybolur ve veri seti `processing` durumunda kalır. Çözümü README'deki yol haritasında (`BLMOVE` + reaper).
+**Worker çökerse ne olur?** Elindeki iş kaybolur ve veri seti `queued` ya da `processing` durumunda kalır. Bunun için bir "reaper" var: [`cleanup.py`](../datadigest/cleanup.py) içindeki `fail_stuck`. CronJob her 15 dakikada bir çalışıp `STUCK_AFTER_MINUTES`'tan uzun süredir bekleyen işleri `failed` yapar. Kullanıcı arayüzde "Try again" ile işi yeniden başlatır. Bunun API karşılığı `POST /api/datasets/{id}/reprocess`. Otomatik yeniden deneme için bir sonraki adım `BLMOVE` ile güvenilir kuyruk.
 
 **Inline mod:** `REDIS_URL` yoksa API işi `BackgroundTasks` ile kendisi yapar. Yerel geliştirme için pratik ama ölçeklenmez.
 
@@ -87,6 +87,8 @@ Okuma sırası önerisi: REST → Kuyruk/Worker → Docker → Compose → Kuber
 - `alembic downgrade 0001`: kolon gider.
 - `alembic upgrade head`: kolon geri gelir.
 
+**Veri migration'ı:** [`0003_queued_at.py`](../migrations/versions/0003_queued_at.py) yeni kolonu ekledikten sonra mevcut satırları da doldurur (`UPDATE datasets SET queued_at = created_at`). Şema değişikliği ile veri düzeltmesi aynı migration'da, aynı sırayla yapılır.
+
 ---
 
 ## 4. Docker: image ve container
@@ -108,9 +110,9 @@ Okuma sırası önerisi: REST → Kuyruk/Worker → Docker → Compose → Kuber
 **Dene:**
 
 ```bash
-docker build -t datadigest:0.2.0 .
+docker build -t datadigest:0.3.0 .
 docker image ls datadigest
-docker history datadigest:0.2.0
+docker history datadigest:0.3.0
 ```
 
 Sonra kodda bir satır değiştirip tekrar build et. Hangi katmanların önbellekten geldiğine bak.
@@ -157,7 +159,7 @@ Compose tek makinede çalışır. Kubernetes aynı fikri bir küme üzerinde, ke
 | **ConfigMap** | Gizli olmayan ayarlar, ortam değişkeni olarak enjekte edilir. | [`configmap.yaml`](../k8s/configmap.yaml) |
 | **Secret** | Şifreler. Git'e **gerçek** değer girmez, sadece örnek. | [`secret.example.yaml`](../k8s/secret.example.yaml) |
 | **Job** | Bir kez çalışıp biten iş | [`migrate-job.yaml`](../k8s/migrate-job.yaml) |
-| **CronJob** | Zamanlanmış Job | [`cleanup-cronjob.yaml`](../k8s/cleanup-cronjob.yaml) |
+| **CronJob** | Zamanlanmış Job (burada 15 dakikada bir: takılı işleri temizle, eski veriyi sil) | [`cleanup-cronjob.yaml`](../k8s/cleanup-cronjob.yaml) |
 | **HPA** | CPU'ya göre pod sayısını otomatik ayarlar | [`worker-hpa.yaml`](../k8s/worker-hpa.yaml) |
 | **Ingress** | Kümenin dışından HTTP trafiğini Service'lere yönlendirir | [`ingress.yaml`](../k8s/ingress.yaml) |
 | **Kustomize** | Dosyaları birleştirir, ortak namespace/etiket/image tag uygular | [`kustomization.yaml`](../k8s/kustomization.yaml) |
@@ -217,6 +219,11 @@ Her komutta neye bakacağın:
 - **XSS:** Kolon adları kullanıcıdan gelir. Rapor Jinja2 `autoescape` ile, dashboard `textContent` ile yazar. `<script>` adında bir kolon çalışmaz; bunun testi var.
 - **Boyut sınırı:** Dosya parça parça okunur, sınır aşılınca hemen 413 döner. Böylece 5 GB'lık dosya belleğe alınmaz.
 - **Sırlar:** `k8s/secret.yaml` ve `.env` `.gitignore`'da.
+- **Güvenlik başlıkları:** [`main.py`](../datadigest/api/main.py) içindeki middleware her yanıta üç başlık ekler:
+  - `X-Content-Type-Options: nosniff`: tarayıcı dosya tipini tahmin etmez.
+  - `X-Frame-Options: DENY`: sayfa başka bir sitenin içine gömülemez (clickjacking).
+  - `Referrer-Policy: same-origin`: tam URL başka sitelere sızmaz.
+- **Yol aşma (path traversal):** Örnek veri ucu dosya adını bir izin listesinden (allow-list) kontrol eder. `../pyproject.toml` gibi bir istek 404 alır; bunun testi var.
 - **Non-root container**, Kubernetes'te `runAsNonRoot: true`.
 
 ---

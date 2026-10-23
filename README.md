@@ -11,6 +11,8 @@ Built as a small but complete service: a REST API, a background worker behind a 
 queue, PostgreSQL, Docker Compose, Kubernetes manifests (with autoscaling and a CronJob)
 and CI that tests against real databases.
 
+![Home](docs/home.png)
+
 ![Dataset overview](docs/dashboard.png)
 
 ![Column cards](docs/columns.png)
@@ -28,11 +30,17 @@ and CI that tests against real databases.
   correlated pairs.
 - **Scores data quality.** Every file gets a 0-100 quality score with an A-D grade, built
   from missing cells, duplicates and weighted warnings
-  ([`quality_score`](datadigest/core/profile.py)).
+  ([`quality_score`](datadigest/core/profile.py)). The breakdown is shown next to the
+  score, so the number explains itself.
 - **Reports.** You get an interactive dashboard and a single-file HTML report. Both are
   drawn from the same Plotly specs. The dashboard has tabs for overview, column cards
-  with type filters, and correlations. Tab links are shareable (`#columns`), and the
-  `1` `2` `3` keys switch tabs.
+  (filter by type, sort by missing or unique values), correlations and a preview of the
+  first rows. Warnings link to their column. Tab links are shareable (`#columns`), and
+  the `1`-`4` keys switch tabs.
+- **Friendly to first-time visitors.** One-click sample datasets, multi-file upload with
+  progress, re-run and delete from the list, and keyboard access throughout.
+- **Recovers from crashes.** If a worker dies mid-job, the cleanup CronJob marks the job
+  failed after 15 minutes and the UI offers "Try again" instead of spinning forever.
 
 ## Architecture
 
@@ -75,7 +83,10 @@ One Docker image runs every role:
 | `GET` | `/api/datasets/{id}/profile` | Full profile JSON (`409` until done) |
 | `GET` | `/api/datasets/{id}/charts` | Plotly figure specs |
 | `GET` | `/api/datasets/{id}/report` | HTML report (`?download=true` to save) |
+| `POST` | `/api/datasets/{id}/reprocess` | Run the analysis again (`409` while queued/processing) |
 | `DELETE` | `/api/datasets/{id}` | Delete dataset and file |
+| `GET` | `/api/samples` | Bundled demo files |
+| `POST` | `/api/samples/{name}` | Create a dataset from a demo file |
 | `GET` | `/api/stats` | Totals for the dashboard: datasets by status, rows, average quality and processing time, mode, queue depth |
 | `GET` | `/healthz`, `/readyz` | Liveness / readiness |
 
@@ -109,8 +120,8 @@ docker compose up --build
 ### 4. Kubernetes (Docker Desktop, kind or minikube)
 
 ```bash
-docker build -t datadigest:0.2.0 .
-# kind: kind load docker-image datadigest:0.2.0   minikube: minikube image load datadigest:0.2.0
+docker build -t datadigest:0.3.0 .
+# kind: kind load docker-image datadigest:0.3.0   minikube: minikube image load datadigest:0.3.0
 cp k8s/secret.example.yaml k8s/secret.yaml           # then change the password
 kubectl apply -k k8s/
 kubectl -n datadigest get pods -w
@@ -152,20 +163,22 @@ GitHub Actions runs three jobs:
   not make Kubernetes restart every pod. `/readyz` checks PostgreSQL and Redis and takes
   the pod out of the load balancer instead.
 - **Migrations as a Job.** Running Alembic in every API replica would race on startup.
-- **Security.** Column names come from user files, so the report is autoescaped and the
+- **Security.** Responses carry `nosniff`, `X-Frame-Options: DENY` and a same-origin
+  referrer policy. Column names come from user files, so the report is autoescaped and the
   dashboard only writes with `textContent`. Uploads are size-limited while they stream in.
   Containers run as non-root. No real credentials are in git.
 
 ## Limitations
 
-- If a worker crashes mid-job, that dataset stays `processing`. A reliable queue
-  (`BLMOVE` to a processing list, plus a reaper) would fix it.
+- If a worker crashes mid-job, the job is not retried automatically: the cleanup CronJob
+  marks it failed after `STUCK_AFTER_MINUTES` and the user retries it. A reliable queue
+  (`BLMOVE` to a processing list) would retry it without user action.
 - Profiling loads the file into memory, so it is capped at 200k rows (`MAX_ROWS`).
 - There is no authentication: anyone who can reach the API can see every dataset.
 
 ## Roadmap
 
-- [ ] Reliable queue with retries and a reaper for stuck jobs
+- [ ] Automatic retries via a reliable queue (`BLMOVE` + processing list)
 - [ ] S3/MinIO for uploads instead of `bytea`
 - [ ] Users and API keys
 - [ ] Prometheus `/metrics` (queue depth, job duration) and a Grafana dashboard

@@ -20,6 +20,8 @@ jobs:
       - run: ruff check .
       - run: ruff format --check .
       - run: python -m pytest -q
+      - name: Syntax-check the dashboard JavaScript
+        run: node --check datadigest/static/app.js
       - name: Cross-check Kubernetes manifests
         run: python scripts/check_manifests.py
       - name: Validate Kubernetes schemas
