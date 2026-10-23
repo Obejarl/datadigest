@@ -227,6 +227,30 @@ def _warnings(columns: list[dict], correlations: dict | None, duplicates: int, r
     return warnings
 
 
+# Points taken off per warning. unique_id is informational (IDs are fine), and
+# duplicates are already priced in through the duplicate percentage.
+WARNING_PENALTY = {
+    "high_missing": 5,
+    "constant": 3,
+    "outliers": 2,
+    "high_correlation": 2,
+    "skewed": 1,
+}
+GRADES = ((90, "A"), (75, "B"), (60, "C"), (0, "D"))
+
+
+def quality_score(missing_cells_pct: float, duplicate_pct: float, warnings: list[dict]) -> dict:
+    """A single 0-100 number for "how clean is this file", with an A-D grade.
+
+    It is a heuristic for comparing files and spotting trouble, not a standard metric.
+    """
+    penalty = min(missing_cells_pct, 30) + min(2 * duplicate_pct, 20)
+    penalty += min(sum(WARNING_PENALTY.get(w["type"], 0) for w in warnings), 30)
+    score = max(0, min(100, round(100 - penalty)))
+    grade = next(letter for threshold, letter in GRADES if score >= threshold)
+    return {"score": score, "grade": grade}
+
+
 def build_profile(table: LoadedTable) -> dict[str, Any]:
     df = table.df
     rows = len(df)
@@ -244,20 +268,23 @@ def build_profile(table: LoadedTable) -> dict[str, Any]:
     for c in columns:
         kinds[c["kind"]] = kinds.get(c["kind"], 0) + 1
 
+    missing_pct = _pct(missing_cells, rows * len(columns))
+    warnings = _warnings(columns, correlations, duplicates, rows)
     return {
         "summary": {
             "rows": rows,
             "columns": len(columns),
             "missing_cells": missing_cells,
-            "missing_cells_pct": _pct(missing_cells, rows * len(columns)),
+            "missing_cells_pct": missing_pct,
             "duplicate_rows": duplicates,
             "memory_bytes": int(df.memory_usage(deep=True).sum()),
             "kinds": kinds,
             "encoding": table.encoding,
             "delimiter": table.delimiter,
             "truncated": table.truncated,
+            "quality": quality_score(missing_pct, _pct(duplicates, rows), warnings),
         },
         "columns": columns,
         "correlations": correlations,
-        "warnings": _warnings(columns, correlations, duplicates, rows),
+        "warnings": warnings,
     }

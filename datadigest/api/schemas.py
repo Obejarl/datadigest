@@ -16,6 +16,7 @@ class DatasetOut(BaseModel):
     rows: int | None
     cols: int | None
     warnings_count: int | None
+    quality_score: int | None
     created_at: datetime
     finished_at: datetime | None
 
@@ -27,3 +28,14 @@ class DatasetOut(BaseModel):
         if value is not None and value.tzinfo is None:
             return value.replace(tzinfo=UTC)
         return value
+
+
+class StatsOut(BaseModel):
+    datasets: int
+    by_status: dict[str, int]
+    rows_profiled: int
+    warnings_found: int
+    avg_quality: float | None
+    avg_seconds: float | None
+    mode: str
+    queue_depth: int | None

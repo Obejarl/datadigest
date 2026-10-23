@@ -40,6 +40,7 @@ def process_dataset(dataset_id: uuid.UUID, factory: sessionmaker) -> Status | No
             dataset.rows = profile["summary"]["rows"]
             dataset.cols = profile["summary"]["columns"]
             dataset.warnings_count = len(profile["warnings"])
+            dataset.quality_score = profile["summary"]["quality"]["score"]
             dataset.status = Status.DONE
 
         dataset.finished_at = utcnow()

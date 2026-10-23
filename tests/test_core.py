@@ -128,3 +128,29 @@ def test_report_escapes_user_content():
     assert "<script>alert(1)</script>" not in html
     assert "<img src=x" not in html
     assert "&lt;script&gt;" in html
+
+
+# --- quality score ----------------------------------------------------------
+
+
+def test_quality_score_clean_file_is_a():
+    from datadigest.core.profile import quality_score
+
+    assert quality_score(0, 0, []) == {"score": 100, "grade": "A"}
+
+
+def test_quality_score_penalties_and_caps():
+    from datadigest.core.profile import quality_score
+
+    warnings = [{"type": "high_missing"}, {"type": "constant"}, {"type": "unique_id"}]
+    # 10 (missing) + 2*5 (duplicates) + 5 + 3 (warnings; unique_id is free) = 28
+    assert quality_score(10, 5, warnings) == {"score": 72, "grade": "C"}
+    # every term is capped, so even a terrible file stays within 0-100
+    worst = quality_score(100, 100, [{"type": "high_missing"}] * 50)
+    assert worst == {"score": 20, "grade": "D"}
+
+
+def test_profile_includes_quality():
+    p = build_profile(load_csv((SAMPLES / "sales.csv").read_bytes()))
+    assert 0 <= p["summary"]["quality"]["score"] <= 100
+    assert p["summary"]["quality"]["grade"] in "ABCD"

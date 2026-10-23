@@ -32,6 +32,7 @@ class Dataset(Base):
     rows: Mapped[int | None] = mapped_column(Integer, default=None)
     cols: Mapped[int | None] = mapped_column(Integer, default=None)
     warnings_count: Mapped[int | None] = mapped_column(Integer, default=None)
+    quality_score: Mapped[int | None] = mapped_column(Integer, default=None)
     # JSONB on PostgreSQL (indexable, compact), plain JSON on SQLite.
     profile: Mapped[dict | None] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql"), default=None, deferred=True

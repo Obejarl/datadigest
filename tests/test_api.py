@@ -113,3 +113,32 @@ def test_readyz_reports_broken_redis(factory):
         app.dependency_overrides.clear()
     assert r.status_code == 503
     assert r.json()["checks"]["redis"].startswith("error")
+
+
+def test_quality_score_is_stored(client):
+    dataset = client.get(f"/api/datasets/{upload(client).json()['id']}").json()
+    profile = client.get(f"/api/datasets/{dataset['id']}/profile").json()
+    assert dataset["quality_score"] == profile["summary"]["quality"]["score"]
+
+
+def test_stats_inline_mode(client):
+    empty = client.get("/api/stats").json()
+    assert empty["datasets"] == 0 and empty["avg_quality"] is None and empty["mode"] == "inline"
+
+    upload(client, "sales.csv")
+    upload(client, "tr_survey.csv")
+    upload(client, "bad.csv", b"only_header\n")
+    stats = client.get("/api/stats").json()
+    assert stats["datasets"] == 3
+    assert stats["by_status"] == {"done": 2, "failed": 1}
+    assert stats["rows_profiled"] == 1005 + 300
+    assert stats["avg_seconds"] is not None and stats["avg_seconds"] >= 0
+    assert stats["queue_depth"] is None
+
+
+def test_stats_worker_mode_reports_queue(queued_client):
+    upload(queued_client)
+    stats = queued_client.get("/api/stats").json()
+    assert stats["mode"] == "worker"
+    assert stats["queue_depth"] == 1
+    assert stats["by_status"] == {"queued": 1}
