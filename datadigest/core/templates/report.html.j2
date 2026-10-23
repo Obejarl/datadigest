@@ -104,8 +104,11 @@
   // tojson escapes <, > and & so user data cannot close this script tag.
   const CHARTS = {{ charts | tojson }};
   const css = getComputedStyle(document.documentElement);
+  const grid = css.getPropertyValue("--border").trim();
   const theme = { paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
-                  font: { color: css.getPropertyValue("--text").trim() } };
+                  font: { color: css.getPropertyValue("--text").trim() },
+                  xaxis: { gridcolor: grid, zerolinecolor: grid },
+                  yaxis: { gridcolor: grid, zerolinecolor: grid } };
   for (const chart of CHARTS) {
     const el = document.querySelector(`[data-chart="${CSS.escape(chart.id)}"]`);
     if (el && window.Plotly) {

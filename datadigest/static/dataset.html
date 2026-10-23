@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dataset · DataDigest</title>
+<link rel="stylesheet" href="/static/style.css">
+<script src="https://cdn.plot.ly/plotly-2.35.2.min.js"></script>
+</head>
+<body data-page="dataset">
+<header class="top"><div class="inner">
+  <a class="brand" href="/">Data<span>Digest</span></a>
+  <nav><a href="/">All datasets</a><a href="/docs">API docs</a></nav>
+</div></header>
+<main>
+  <h1 id="title">Loading…</h1>
+  <div class="status-line"><span id="status"></span><span id="meta" class="muted"></span></div>
+  <div id="error" class="notice error" hidden></div>
+
+  <section id="result" hidden>
+    <div class="cards" id="cards"></div>
+    <div class="actions">
+      <a class="btn primary" id="report-download">Download HTML report</a>
+      <a class="btn" id="report-open" target="_blank" rel="noopener">Open report</a>
+      <a class="btn" id="profile-json" target="_blank" rel="noopener">Profile JSON</a>
+      <button class="btn danger" id="delete" type="button">Delete</button>
+    </div>
+
+    <h2 id="warnings-title">Warnings</h2>
+    <div id="warnings"></div>
+
+    <h2>Columns</h2>
+    <div class="table-wrap">
+      <table>
+        <thead><tr><th>Name</th><th>Type</th><th>Missing</th><th>Unique</th><th>Summary</th></tr></thead>
+        <tbody id="columns"></tbody>
+      </table>
+    </div>
+
+    <h2>Charts</h2>
+    <div class="charts" id="charts"></div>
+  </section>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

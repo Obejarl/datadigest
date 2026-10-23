@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DataDigest</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body data-page="index">
+<header class="top"><div class="inner">
+  <a class="brand" href="/">Data<span>Digest</span></a>
+  <nav><a href="/docs">API docs</a></nav>
+</div></header>
+<main>
+  <h1>Profile a CSV in seconds</h1>
+  <p class="muted">Upload a file: you get column types, missing values, distributions, correlations, data-quality warnings and a shareable HTML report.</p>
+
+  <label class="drop" id="drop">
+    <strong>Drop a CSV here or click to choose</strong>
+    <span class="muted">.csv, .tsv or .txt; comma, semicolon, tab or pipe separated</span>
+    <input type="file" id="file" accept=".csv,.tsv,.txt">
+  </label>
+  <div id="upload-error" class="notice error" hidden></div>
+
+  <h2>Recent datasets</h2>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>File</th><th>Status</th><th>Rows</th><th>Columns</th><th>Warnings</th><th>Size</th><th>Uploaded</th></tr></thead>
+      <tbody id="datasets"></tbody>
+    </table>
+  </div>
+</main>
+<script src="/static/app.js"></script>
+</body>
+</html>

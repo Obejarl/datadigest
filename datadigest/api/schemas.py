@@ -1,7 +1,7 @@
 import uuid
-from datetime import datetime
+from datetime import UTC, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, field_validator
 
 
 class DatasetOut(BaseModel):
@@ -18,3 +18,12 @@ class DatasetOut(BaseModel):
     warnings_count: int | None
     created_at: datetime
     finished_at: datetime | None
+
+    @field_validator("created_at", "finished_at")
+    @classmethod
+    def _assume_utc(cls, value: datetime | None) -> datetime | None:
+        # SQLite drops the timezone; we only ever store UTC, so put it back.
+        # Without it the browser would read the time as local time.
+        if value is not None and value.tzinfo is None:
+            return value.replace(tzinfo=UTC)
+        return value

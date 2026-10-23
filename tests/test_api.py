@@ -13,6 +13,7 @@ def test_upload_is_processed_inline(client):
     # TestClient runs BackgroundTasks before returning, so the job is already done.
     dataset = client.get(f"/api/datasets/{r.json()['id']}").json()
     assert dataset["status"] == "done"
+    assert dataset["created_at"].endswith("Z")  # explicit UTC even though SQLite drops tz
     assert (dataset["rows"], dataset["cols"]) == (1005, 11)
     assert dataset["warnings_count"] > 0
 
