@@ -736,6 +736,7 @@ async function loadDataset(id, mode) {
     return;
   }
   document.getElementById("actions").hidden = false;
+  document.getElementById("optimize-link").href = `/optimize?dataset=${id}`;
   document.getElementById("report-actions").hidden = dataset.status !== "done";
   document.getElementById("rerun").hidden = dataset.status !== "done";
   if (dataset.status === "failed") {

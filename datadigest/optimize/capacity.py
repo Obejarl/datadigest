@@ -77,7 +77,7 @@ def _recommend(rows: list[dict], target: float) -> dict | None:
     )
 
 
-def plan(inputs: CapacityInputs, measured: dict | None = None) -> dict:
+def plan(inputs: CapacityInputs, measured: dict | None = None, uses_measured: bool = False) -> dict:
     lam = inputs.arrival_per_min / 60
     mu = 1 / inputs.service_seconds
     target = inputs.target_wait_seconds
@@ -132,11 +132,24 @@ def plan(inputs: CapacityInputs, measured: dict | None = None) -> dict:
                 f"{prev['wait_s']:.2f} s to {rec['wait_s']:.2f} s: queueing delay is very non-linear "
                 "near full utilisation."
             )
-    if measured and measured.get("service_samples"):
+    if uses_measured and measured and measured.get("service_samples"):
+        cv = measured.get("service_cv")
+        note = ""
+        if cv is not None:
+            note = (
+                " Service times vary less than the model assumes, so real waits should be shorter."
+                if cv < 0.8
+                else " Service times vary more than the model assumes, so real waits may be longer: "
+                "keep headroom."
+                if cv > 1.2
+                else ""
+            )
         insights.append(
-            f"Inputs measured from {measured['service_samples']} completed jobs "
-            f"(service time CV {measured.get('service_cv', 0):.2f}). M/M/c assumes random arrivals and "
-            "exponential service times; a CV well below 1 means real waits will be shorter than predicted."
+            f"Arrival rate and service time are measured from {measured['service_samples']} completed "
+            f"jobs (service-time CV {cv:.2f}). M/M/c assumes random arrivals and exponential service "
+            f"(CV 1).{note}"
+            if cv is not None
+            else f"Service time is measured from {measured['service_samples']} completed jobs."
         )
 
     hpa = {
@@ -156,7 +169,7 @@ def plan(inputs: CapacityInputs, measured: dict | None = None) -> dict:
                     "type": "scatter",
                     "mode": "lines+markers",
                     "x": x,
-                    "y": [r["wait_s"] for r in stable],
+                    "y": [max(r["wait_s"], 1e-6) for r in stable],  # log axis: keep ~0 waits on the chart
                     "line": {"color": CYAN},
                     "name": "normal load",
                     "hovertemplate": "%{x} workers: %{y:.2f} s<extra></extra>",
@@ -165,7 +178,7 @@ def plan(inputs: CapacityInputs, measured: dict | None = None) -> dict:
                     "type": "scatter",
                     "mode": "lines+markers",
                     "x": [r["workers"] for r in peak_rows if r["stable"]],
-                    "y": [r["wait_s"] for r in peak_rows if r["stable"]],
+                    "y": [max(r["wait_s"], 1e-6) for r in peak_rows if r["stable"]],
                     "line": {"color": VIOLET, "dash": "dot"},
                     "name": f"{inputs.peak_factor:g}× peak",
                     "hovertemplate": "%{x} workers: %{y:.2f} s<extra></extra>",

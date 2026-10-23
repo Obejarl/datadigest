@@ -253,4 +253,4 @@ def capacity(
         peak_factor=peak_factor,
         max_workers=max_workers,
     )
-    return plan(inputs, measured)
+    return plan(inputs, measured, uses_measured=arrival_per_min is None or service_seconds is None)

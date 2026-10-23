@@ -110,9 +110,9 @@ Okuma sırası önerisi: REST → Kuyruk/Worker → Docker → Compose → Kuber
 **Dene:**
 
 ```bash
-docker build -t datadigest:0.3.0 .
+docker build -t datadigest:0.4.0 .
 docker image ls datadigest
-docker history datadigest:0.3.0
+docker history datadigest:0.4.0
 ```
 
 Sonra kodda bir satır değiştirip tekrar build et. Hangi katmanların önbellekten geldiğine bak.
@@ -228,6 +228,73 @@ Her komutta neye bakacağın:
 
 ---
 
+## 9. Yöneylem araştırması (optimizasyon)
+
+Profilleme "veride ne var?" sorusunu cevaplar. Optimizasyon ise "bu veriyle en iyi karar ne?" sorusunu. Dört model de [`datadigest/optimize/`](../datadigest/optimize/) altında saf fonksiyonlar olarak duruyor: DB ve HTTP bilmiyorlar.
+
+### Doğrusal programlama (LP) ve gölge fiyat
+[`production.py`](../datadigest/optimize/production.py), üretim planını bir LP olarak kuruyor:
+
+- **Amaç:** max Σ kâr·miktar.
+- **Kısıtlar:** her kaynak için Σ kullanım·miktar ≤ kapasite.
+
+LP çözülünce her kısıtın bir **dual** değeri de gelir. Buna **gölge fiyat** denir: o kaynaktan bir birim daha olsaydı kâr ne kadar artardı? "Makine saati darboğaz, 1 saat daha 21 TL kazandırır" cümlesi buradan çıkıyor. Test, bu sayının doğruluğunu kapasiteyi 1 artırıp yeniden çözerek kontrol ediyor.
+
+**Neden gölge fiyat her şey değil?** Gölge fiyat sadece küçük değişiklikler için geçerli. Makineyi %50 artırınca bu sefer işçilik bitiyor; bunu what-if eğrisi gösteriyor. Uygulama bu durumda kullanıcıyı açıkça uyarıyor.
+
+### Tam sayılı programlama (MIP) ve LP gevşetmesi
+"Yarım sandalye üretilemez" → değişkenler tam sayı olmak zorunda. Bu durumda problem MIP'e dönüşür: çözmesi zordur ve dual değer vermez. Uygulama bu yüzden ayrıca **LP gevşetmesini** (tam sayı şartını kaldırılmış hali) çözüyor ve ondan iki şey elde ediyor:
+- gölge fiyatları,
+- teorik üst sınırı.
+
+İkisi arasındaki farka **integrality gap** deniyor. "Tam sayı plan, teorik optimumun %0,04 yakınında" cümlesi bu farktan geliyor. Bütçe seçimi ([`knapsack.py`](../datadigest/optimize/knapsack.py)) de aynı fikrin 0/1 hali.
+
+### Ulaştırma problemi ve dual fiyatlar
+[`transport.py`](../datadigest/optimize/transport.py) klasik ulaştırma tablosunu okuyor: arz kolonu, talep satırı ve birim maliyetler. Dual değerler iki soruyu cevaplıyor:
+- "Ankara'ya 1 birim daha arz 32 TL tasarruf ettirir."
+- "Trabzon'a 1 birim daha talep 105 TL ekler."
+
+Trabzon'daki 105 tam olarak boş kapasitesi olan İstanbul'dan Trabzon'a gönderim maliyeti. Ekonomik yorumu bu.
+
+### Atama problemi: Macar algoritması
+n kişiyi n işe atamanın n! yolu var; 10 kişide 3,6 milyon. Macar algoritması ([`assignment.py`](../datadigest/optimize/assignment.py), SciPy'nin `linear_sum_assignment`'ı) bunu O(n³)'te kesin olarak çözer. İlginç içgörü: takım optimumu için bazı kişiler en iyi oldukları işi yapmıyor.
+
+### Optimum ile sezgisel yöntem farkı
+Her sonuç, insanların gerçekte kullandığı basit kuralla karşılaştırılıyor:
+
+| Problem | Basit kural |
+|---|---|
+| Üretim planı | En yüksek marjlı ürün önce |
+| Ulaştırma | En ucuz rota önce |
+| Atama | En iyi eşleşme önce |
+| Bütçe seçimi | En iyi değer/maliyet önce |
+
+Fark, optimizasyonun neden işe yaradığının somut kanıtı: örneklerde %5 ile %23 arası.
+
+### Kuyruk teorisi: M/M/c ve Kubernetes
+[`capacity.py`](../datadigest/optimize/capacity.py) DataDigest'in kendi worker'larını boyutlandırıyor. Kullanılan büyüklükler:
+- λ: dakikadaki iş sayısı,
+- μ: bir worker'ın saniyedeki iş hızı,
+- c: worker sayısı.
+
+**Erlang C** formülü bir işin beklemek zorunda kalma olasılığını verir. Ortalama bekleme ondan çıkar: Wq = C / (cμ − λ).
+
+- **Doğrusal olmama:** Doluluk %100'e yaklaştıkça bekleme patlar. 4 worker'dan 5'e çıkınca bekleme 3,06 saniyeden 0,71 saniyeye düşüyor.
+- **Maliyet optimumu:** worker maliyeti ile bekleme maliyeti arasındaki dengenin en ucuz noktası.
+- **HPA bağlantısı:**
+  - normal yük için gereken sayı `minReplicas` olur,
+  - zirve yük için gereken sayı `maxReplicas` olur.
+
+  Sayfa bunları kopyalanabilir YAML olarak veriyor.
+- **Varsayımlar:** M/M/c rastgele gelişler ve üstel dağılımlı servis süreleri varsayar. Ölçülen değişkenlik katsayısı (CV) 1'den büyükse gerçek beklemeler daha uzun olabilir; uygulama bunu da söylüyor.
+
+**Dene:**
+1. `/optimize`'da dört örneği çalıştır.
+2. Üretim planında "Change inputs" ile makine kapasitesini değiştir ve gölge fiyatın nasıl değiştiğine bak.
+3. `/capacity`'de geliş hızını artırıp worker sayısının nasıl sıçradığını izle.
+
+---
+
 ## Mülakatta 60 saniyede anlatım
 
-> "CSV yükleyince otomatik veri kalitesi raporu çıkaran bir servis yazdım. API dosyayı alıp 202 döner ve işi Redis kuyruğuna atar. Worker'lar pandas ile profil çıkarıp PostgreSQL'e JSONB olarak yazar. Analiz CPU-ağır olduğu için worker'ları API'den ayırdım ve Kubernetes'te HPA ile CPU'ya göre ölçekliyorum. Migration'lar Job, eski veri temizliği CronJob. Liveness ile readiness'ı bilerek ayırdım: veritabanı gidince pod'lar trafikten çıkıyor ama yeniden başlamıyor. CI'da hem SQLite ile hızlı birim testleri hem de gerçek PostgreSQL/Redis ile entegrasyon testleri koşuyor. Bilinen zayıflığı, worker çökerse işin kaybolması. Çözümü BLMOVE ile güvenilir kuyruk."
+> "CSV yükleyince otomatik veri kalitesi raporu çıkaran bir servis yazdım. API dosyayı alıp 202 döner ve işi Redis kuyruğuna atar. Worker'lar pandas ile profil çıkarıp PostgreSQL'e JSONB olarak yazar. Analiz CPU-ağır olduğu için worker'ları API'den ayırdım ve Kubernetes'te HPA ile CPU'ya göre ölçekliyorum. Migration'lar Job, eski veri temizliği CronJob. Liveness ile readiness'ı bilerek ayırdım: veritabanı gidince pod'lar trafikten çıkıyor ama yeniden başlamıyor. CI'da hem SQLite ile hızlı birim testleri hem de gerçek PostgreSQL/Redis ile entegrasyon testleri koşuyor. Aynı veriler üzerinde yöneylem araştırması da var: LP/MIP ile üretim planı, ulaştırma, atama ve bütçe seçimi. Her sonuç gölge fiyatlarla açıklanıyor ve basit kurala göre ne kadar daha iyi olduğu gösteriliyor; optimallik testlerde kaba kuvvetle doğrulanıyor. Kuyruk teorisiyle de (M/M/c) uygulamanın kendi worker sayısını ve HPA ayarlarını hesaplıyorum. Bilinen zayıflığı, worker çökerse işin kaybolması. Çözümü BLMOVE ile güvenilir kuyruk."

@@ -5,7 +5,9 @@
 ![License: MIT](https://img.shields.io/badge/license-MIT-green)
 
 Upload a CSV and get an automatic data-quality profile: column types, missing values,
-distributions, correlations, warnings and a shareable HTML report.
+distributions, correlations, warnings and a shareable HTML report. Then **optimise** on the
+same data with operations research: production plans, shipping routes, team assignments
+and budgets, solved to the proven optimum and explained in plain words.
 
 Built as a small but complete service: a REST API, a background worker behind a Redis
 queue, PostgreSQL, Docker Compose, Kubernetes manifests (with autoscaling and a CronJob)
@@ -42,6 +44,43 @@ and CI that tests against real databases.
 - **Recovers from crashes.** If a worker dies mid-job, the cleanup CronJob marks the job
   failed after 15 minutes and the UI offers "Try again" instead of spinning forever.
 
+## Operations research
+
+![Optimize](docs/optimize.png)
+
+Pick a problem type, run the bundled example in one click, or point it at your own
+dataset (the form is built from the file's columns). Solvers run on the same queue and
+workers as profiling.
+
+| Problem | Decides | Method | Output beyond the plan |
+|---|---|---|---|
+| **Production planning** | How much of each product to make for maximum profit under machine, labour and material limits | LP / MIP with HiGHS | Shadow price of every resource, opportunity cost of products left out, integrality gap, what-if curve on the bottleneck |
+| **Transportation** | Who ships how much to whom at minimum cost | LP with HiGHS | Value of +1 supply per source, cost of +1 demand per destination, Sankey of flows |
+| **Assignment** | One-to-one pairing of people and tasks for the best team total | Hungarian algorithm | Who gives up their personal best task, and by how much |
+| **Budget allocation** | Which projects to fund under several budgets | 0/1 MIP with HiGHS | LP upper bound and gap; which projects the optimum swaps versus the ranking rule |
+
+Every result is compared with the rule of thumb people actually use (highest margin
+first, cheapest route first, best pair first, best value-per-cost first). On the bundled
+examples the optimum is **23%, 5%, 6% and 13% better**.
+
+The numbers are verified, not just plausible: tests check each optimum against brute
+force, and each shadow price or dual against re-solving with one more unit.
+
+![Production plan](docs/production.png)
+
+### Capacity planning for DataDigest itself
+
+![Capacity](docs/capacity.png)
+
+The `/capacity` page applies queueing theory (M/M/c, Erlang C) to DataDigest's own
+workers. Arrival rate and service time are measured from completed jobs, or you can
+enter a scenario (shareable as a link). It reports:
+
+- the fewest workers that meet a target mean wait;
+- the cost-optimal count (worker cost against waiting cost);
+- the count needed at peak load;
+- ready-to-paste `minReplicas`/`maxReplicas` for the worker HPA.
+
 ## Architecture
 
 ```mermaid
@@ -55,9 +94,10 @@ flowchart LR
     M[migrate<br/>Job] -->|alembic upgrade| PG
 ```
 
-1. `POST /api/datasets` stores the file and returns **202 Accepted** right away.
-2. A worker takes the job from Redis, profiles the file and writes the profile as
-   JSONB to PostgreSQL.
+1. `POST /api/datasets` (or `POST /api/optimizations`) stores the job and returns **202 Accepted**
+   right away. Queue entries carry their kind (`dataset:<id>`, `optimization:<id>`).
+2. A worker takes the job from Redis, profiles the file or runs the solver, and writes the
+   result as JSONB to PostgreSQL.
 3. The client polls `GET /api/datasets/{id}` until the status is `done`.
 
 The API answers quickly no matter how big the file is, and workers scale on their own.
@@ -85,6 +125,12 @@ One Docker image runs every role:
 | `GET` | `/api/datasets/{id}/report` | HTML report (`?download=true` to save) |
 | `POST` | `/api/datasets/{id}/reprocess` | Run the analysis again (`409` while queued/processing) |
 | `DELETE` | `/api/datasets/{id}` | Delete dataset and file |
+| `GET` | `/api/optimize/kinds` | Problem types, parameter schemas and examples |
+| `POST` | `/api/optimizations` | Run a solver on a dataset: `{dataset_id, kind, params}` (`202`, `422` on bad params or unknown columns) |
+| `POST` | `/api/optimize/examples/{kind}` | Load the example data and solve it in one call |
+| `GET` | `/api/optimizations`, `/api/optimizations/{id}` | Runs, and one run with its full result |
+| `GET` | `/api/optimizations/{id}/report` | Optimization report as HTML |
+| `GET` | `/api/capacity` | M/M/c worker sizing; missing inputs come from measured job history |
 | `GET` | `/api/samples` | Bundled demo files |
 | `POST` | `/api/samples/{name}` | Create a dataset from a demo file |
 | `GET` | `/api/stats` | Totals for the dashboard: datasets by status, rows, average quality and processing time, mode, queue depth |
@@ -120,8 +166,8 @@ docker compose up --build
 ### 4. Kubernetes (Docker Desktop, kind or minikube)
 
 ```bash
-docker build -t datadigest:0.3.0 .
-# kind: kind load docker-image datadigest:0.3.0   minikube: minikube image load datadigest:0.3.0
+docker build -t datadigest:0.4.0 .
+# kind: kind load docker-image datadigest:0.4.0   minikube: minikube image load datadigest:0.4.0
 cp k8s/secret.example.yaml k8s/secret.yaml           # then change the password
 kubectl apply -k k8s/
 kubectl -n datadigest get pods -w
@@ -188,6 +234,7 @@ GitHub Actions runs three jobs:
 
 ```
 datadigest/core/      pure profiling: loader, profile, charts, report (no DB, no HTTP)
+datadigest/optimize/  pure solvers: production, transport, assignment, knapsack, capacity (M/M/c)
 datadigest/api/       FastAPI routes, schemas, dependencies
 datadigest/static/    dashboard (plain HTML/CSS/JS + plotly.js)
 datadigest/*.py       config, db, models, jobs, queue, worker, cleanup, CLI
