@@ -1,0 +1,66 @@
+# Full stack on one machine:  docker compose up --build
+# Then open http://localhost:8000
+
+x-app: &app
+  build: .
+  image: datadigest:local
+  environment:
+    DATABASE_URL: postgresql+psycopg://datadigest:datadigest@postgres:5432/datadigest
+    REDIS_URL: redis://redis:6379/0
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: datadigest
+      POSTGRES_PASSWORD: datadigest
+      POSTGRES_DB: datadigest
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U datadigest"]
+      interval: 3s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      retries: 20
+
+  # Runs once and exits; api and worker wait for it to succeed.
+  migrate:
+    <<: *app
+    command: ["alembic", "upgrade", "head"]
+    healthcheck:
+      disable: true
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  api:
+    <<: *app
+    ports:
+      - "8000:8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+  worker:
+    <<: *app
+    command: ["python", "-m", "datadigest.worker"]
+    healthcheck:
+      disable: true
+    deploy:
+      replicas: 2
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_healthy
+
+volumes:
+  pgdata:
