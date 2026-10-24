@@ -68,9 +68,9 @@ jobs:
     steps:
       - uses: actions/checkout@v5
       - run: docker build -t datadigest:ci .
-      - name: Start the API on SQLite and hit /healthz
+      - name: Start the API on SQLite inside the image
         run: |
           docker run -d --name api -p 8000:8000 -e DATABASE_URL=sqlite:////tmp/dd.db datadigest:ci \
             sh -c "alembic upgrade head && uvicorn datadigest.api.main:app --host 0.0.0.0 --port 8000"
-          for i in $(seq 1 30); do curl -fsS localhost:8000/readyz && exit 0; sleep 1; done
-          docker logs api; exit 1
+      - name: Profile a sample and solve all four optimization examples in the container
+        run: sh scripts/smoke_test.sh http://localhost:8000 || (docker logs api; exit 1)

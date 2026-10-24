@@ -23,10 +23,12 @@ from datadigest.optimize.common import (
     CYAN,
     EPS,
     GREEN,
+    MAX_VARIABLES_FOR_WHAT_IF,
     STATUS,
     VIOLET,
     OptimizationError,
     chart,
+    check_size,
     envelope,
     fmt,
     infeasible,
@@ -101,6 +103,7 @@ def _greedy(p, A, b, lb, ub, integer):
 
 
 def solve(df: pd.DataFrame, params: ProductionParams, time_limit: float = 10.0) -> dict:
+    check_size(len(df), "products")
     names = labels(df, params.name_column)
     p = numeric(df, params.objective_column)
     resources = [r.column for r in params.resources]
@@ -178,7 +181,7 @@ def solve(df: pd.DataFrame, params: ProductionParams, time_limit: float = 10.0) 
     # What-if: scale the most valuable resource and re-solve.
     bottleneck = int(np.argmax(shadow)) if shadow.max() > EPS else None
     curve = []
-    if bottleneck is not None:
+    if bottleneck is not None and len(p) <= MAX_VARIABLES_FOR_WHAT_IF:
         for f in PARAMETRIC_STEPS:
             bb = b.copy()
             bb[bottleneck] *= f

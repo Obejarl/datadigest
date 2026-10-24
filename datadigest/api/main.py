@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 app = FastAPI(
     title="DataDigest",
-    version="0.4.0",
+    version="0.4.1",
     description="Upload a CSV, get an automatic data-quality profile, charts and an HTML report.",
 )
 app.include_router(routes_health.router)
@@ -36,26 +36,32 @@ async def security_headers(request, call_next):
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
+def page(name: str) -> FileResponse:
+    # HTML is revalidated on every visit; it references versioned assets (style.css?v=...),
+    # so a new release reaches browsers immediately instead of mixing old and new files.
+    return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
+
+
 @app.get("/", include_in_schema=False)
 def index():
-    return FileResponse(STATIC / "index.html")
+    return page("index.html")
 
 
 @app.get("/datasets/{dataset_id}", include_in_schema=False)
 def dataset_page(dataset_id: str):
-    return FileResponse(STATIC / "dataset.html")
+    return page("dataset.html")
 
 
 @app.get("/optimize", include_in_schema=False)
 def optimize_page():
-    return FileResponse(STATIC / "optimize.html")
+    return page("optimize.html")
 
 
 @app.get("/optimizations/{opt_id}", include_in_schema=False)
 def optimization_page(opt_id: str):
-    return FileResponse(STATIC / "optimization.html")
+    return page("optimization.html")
 
 
 @app.get("/capacity", include_in_schema=False)
 def capacity_page():
-    return FileResponse(STATIC / "capacity.html")
+    return page("capacity.html")

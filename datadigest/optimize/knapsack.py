@@ -27,6 +27,7 @@ from datadigest.optimize.common import (
     VIOLET,
     OptimizationError,
     chart,
+    check_size,
     envelope,
     fmt,
     infeasible,
@@ -69,6 +70,7 @@ def _greedy(v: np.ndarray, W: np.ndarray, B: np.ndarray, max_items: int | None) 
 
 
 def solve(df: pd.DataFrame, params: KnapsackParams, time_limit: float = 10.0) -> dict:
+    check_size(len(df), "items")
     names = labels(df, params.name_column)
     v = numeric(df, params.value_column)
     cols = [b.column for b in params.budgets]

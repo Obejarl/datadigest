@@ -9,12 +9,12 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="/static/style.css">
+<link rel="stylesheet" href="/static/style.css?v=0.4.1">
 </head>
 <body data-page="index">
 <header class="topbar">
   <a class="brand" href="/"><img src="/static/logo.svg" alt="" width="32" height="32"><span class="name">DataDigest</span></a>
-  <span class="ver">v0.4</span>
+  <span class="ver">v0.4.1</span>
   <nav class="nav"><a href="/" class="active">Overview</a><a href="/optimize">Optimize</a><a href="/capacity">Capacity</a><a href="/docs">API docs</a></nav>
   <div class="pills" id="pills"></div>
   <button class="btn primary" type="button" id="top-upload">
@@ -46,6 +46,13 @@
   <div class="uploads" id="uploads" aria-live="polite"></div>
   <div class="samples" id="samples" hidden></div>
 
+  <a class="promo" href="/optimize">
+    <span class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 17 6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span>
+    <span class="txt"><strong>From describing data to deciding with it</strong>
+      <span class="muted">Production plans, shipping routes, team assignments and budgets, solved to the proven optimum on your datasets.</span></span>
+    <span class="btn">Open Optimize →</span>
+  </a>
+
   <section class="card">
     <div class="card-h">
       <h2 class="card-t">Datasets</h2>
@@ -62,6 +69,6 @@
   <footer>DataDigest · FastAPI · Redis · PostgreSQL · Kubernetes</footer>
 </main>
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<script src="/static/app.js"></script>
+<script src="/static/app.js?v=0.4.1"></script>
 </body>
 </html>

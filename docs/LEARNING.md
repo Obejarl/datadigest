@@ -110,9 +110,9 @@ Okuma sırası önerisi: REST → Kuyruk/Worker → Docker → Compose → Kuber
 **Dene:**
 
 ```bash
-docker build -t datadigest:0.4.0 .
+docker build -t datadigest:0.4.1 .
 docker image ls datadigest
-docker history datadigest:0.4.0
+docker history datadigest:0.4.1
 ```
 
 Sonra kodda bir satır değiştirip tekrar build et. Hangi katmanların önbellekten geldiğine bak.
@@ -292,6 +292,29 @@ Fark, optimizasyonun neden işe yaradığının somut kanıtı: örneklerde %5 i
 1. `/optimize`'da dört örneği çalıştır.
 2. Üretim planında "Change inputs" ile makine kapasitesini değiştir ve gölge fiyatın nasıl değiştiğine bak.
 3. `/capacity`'de geliş hızını artırıp worker sayısının nasıl sıçradığını izle.
+
+---
+
+## 10. Bu projede yakalanan hatalar ve öğrettikleri
+
+Her biri testte ya da tarayıcıda ölçerek bulundu. Hepsi düzeltildi; çoğunun artık bir testi var.
+
+| Hata | Ne öğretti |
+|---|---|
+| SQLite saat dilimini saklamıyor, tarihler "3 saat önce" görünüyordu | Veritabanları zaman damgasını farklı saklar; API her zaman açık UTC döndürmeli ([`schemas.py`](../datadigest/api/schemas.py)). |
+| Grafikler gizli sekmede çizilince 700px'e taşıyordu | Plotly kapsayıcısını ölçer, gizli öğenin genişliği 0'dır; grafik görünür olunca çizilmeli (`IntersectionObserver`). |
+| Ulaştırmada "1 birim talep −21 ekler" çıkıyordu | Dual değerin işareti kısıtın yazılış yönüne bağlıdır (≤ ya da ≥). Çözüm: "1 birim artırıp yeniden çöz" testi. |
+| Form varsayılanları uygulanamaz bir model kuruyordu | Varsayılan değerler de veridir. Hiç düşünmeden "ortalama × satır" demek yerine minimum talebi karşılayan kapasite hesaplandı. |
+| Mobilde Optimize sayfası 776px'e genişliyordu | `position: absolute` bir öğe, en yakın konumlandırılmış ataya göre yerleşir. Kaydırma kutusu konumlandırılmamışsa öğe kutudan kaçar. `backdrop-filter` de yeni bir kapsayıcı blok oluşturur. |
+| Düzeltilen CSS tarayıcıya ulaşmadı | Tarayıcı önbelleği. Çözüm: HTML `no-cache` ile sunulur, statik dosyalar sürümlü (`style.css?v=0.4.1`) bağlanır. |
+| Örnek CSV'ler git'te "değişmiş" görünüyordu | pandas Windows'ta CRLF yazar. Çıktıyı işletim sisteminden bağımsız yapmak için `lineterminator="\n"`. |
+| `sales.csv` ile kâr kolonu testi beklenmedik biçimde başarısız oldu | Veride 5 tekrar eden satır var, `order_id` benzersiz değil. Test, sistemin başka (ve doğru) bir hatayı önce yakaladığını gösterdi. |
+
+Genel ders: "çalışıyor gibi görünüyor" ile "doğru" arasındaki farkı ölçmek gerekiyor. Bunun yolları:
+- optimum değerleri kaba kuvvetle karşılaştırmak,
+- dual değerleri yeniden çözerek doğrulamak,
+- sayfa genişliğini sayıyla ölçmek,
+- ekran görüntüsüne gerçekten bakmak.
 
 ---
 

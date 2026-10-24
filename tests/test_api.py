@@ -203,3 +203,11 @@ def test_profile_has_preview_and_quality_breakdown(client):
     assert profile["preview"]["columns"][0] == "order_id"
     assert len(profile["preview"]["rows"]) == 20
     assert set(profile["summary"]["quality"]["penalties"]) == {"missing", "duplicates", "warnings"}
+
+
+def test_pages_are_revalidated_and_reference_versioned_assets(client):
+    for path in ["/", "/optimize", "/capacity", "/datasets/x", "/optimizations/x"]:
+        r = client.get(path)
+        assert r.status_code == 200
+        assert r.headers["cache-control"] == "no-cache"
+        assert "style.css?v=" in r.text

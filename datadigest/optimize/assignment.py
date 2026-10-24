@@ -20,9 +20,11 @@ from datadigest.optimize.common import (
     CYAN,
     EPS,
     GREEN,
+    MAX_ASSIGNMENT_SIDE,
     VIOLET,
     OptimizationError,
     chart,
+    check_size,
     envelope,
     fmt,
     kpi,
@@ -57,10 +59,12 @@ def _greedy(M: np.ndarray, allowed: np.ndarray, maximize: bool) -> list[tuple[in
 
 
 def solve(df: pd.DataFrame, params: AssignmentParams, time_limit: float = 10.0) -> dict:
+    check_size(len(df), "agents", MAX_ASSIGNMENT_SIDE)
     agents = labels(df, params.agent_column)
-    tasks = params.task_columns or numeric_columns(df, {params.agent_column})
+    tasks = [t for t in (params.task_columns or numeric_columns(df, set())) if t != params.agent_column]
     if not tasks:
         raise OptimizationError("No task columns found (numeric columns with scores or costs)")
+    check_size(len(tasks), "tasks", MAX_ASSIGNMENT_SIDE)
     for t in tasks:
         require_column(df, t)
     M = df[tasks].apply(pd.to_numeric, errors="coerce").to_numpy(dtype=float)

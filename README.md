@@ -166,8 +166,8 @@ docker compose up --build
 ### 4. Kubernetes (Docker Desktop, kind or minikube)
 
 ```bash
-docker build -t datadigest:0.4.0 .
-# kind: kind load docker-image datadigest:0.4.0   minikube: minikube image load datadigest:0.4.0
+docker build -t datadigest:0.4.1 .
+# kind: kind load docker-image datadigest:0.4.1   minikube: minikube image load datadigest:0.4.1
 cp k8s/secret.example.yaml k8s/secret.yaml           # then change the password
 kubectl apply -k k8s/
 kubectl -n datadigest get pods -w
@@ -190,11 +190,16 @@ pytest                                   # unit tests: SQLite + fakeredis
 python scripts/check_manifests.py        # cross-checks selectors, ports, refs, env vars
 ```
 
+`scripts/smoke_test.sh <url>` checks a running deployment end to end. It waits for
+`/readyz`, profiles a sample, solves all four optimization examples and calls the capacity
+planner.
+
 GitHub Actions runs three jobs:
 - lint, unit tests, manifest checks and `kubeconform` schema validation;
 - integration tests against real PostgreSQL and Redis service containers, including a
   migration up/down/up;
-- a Docker build with a smoke test against the running container.
+- a Docker build, then that smoke test against the running container (which proves the
+  SciPy solver and the sample files are in the image).
 
 ## Design decisions
 
@@ -221,6 +226,13 @@ GitHub Actions runs three jobs:
   (`BLMOVE` to a processing list) would retry it without user action.
 - Profiling loads the file into memory, so it is capped at 200k rows (`MAX_ROWS`).
 - There is no authentication: anyone who can reach the API can see every dataset.
+- Optimization models are capped at 20,000 products/items/routes and 1,500 agents or
+  tasks, and each run at `OPT_TIME_LIMIT_SECONDS` (10 s). At the limit HiGHS returns its
+  best plan so far, marked "time limit".
+- For integer models (whole units, project selection) the shadow prices come from the LP
+  relaxation, so they are a guide rather than exact.
+- The capacity planner assumes M/M/c (random arrivals, exponential service). It says
+  so when the measured service times vary more or less than that.
 
 ## Roadmap
 

@@ -24,11 +24,11 @@ from datadigest.optimize.common import (
     CYAN,
     EPS,
     GREY,
-    MAX_VARIABLES,
     STATUS,
     VIOLET,
     OptimizationError,
     chart,
+    check_size,
     envelope,
     fmt,
     infeasible,
@@ -61,7 +61,12 @@ def _parse(df: pd.DataFrame, params: TransportParams):
         raise OptimizationError(
             f"Add exactly one row named '{params.demand_label}' holding each destination's demand"
         )
-    dests = params.destination_columns or numeric_columns(df, {params.source_column, params.supply_column})
+    # The name and supply columns are never destinations, even if a client lists them by mistake.
+    dests = [
+        d
+        for d in (params.destination_columns or numeric_columns(df, set()))
+        if d not in {params.source_column, params.supply_column}
+    ]
     if not dests:
         raise OptimizationError("No destination columns found (numeric columns with unit costs)")
     for d in dests:
@@ -101,8 +106,7 @@ def solve(df: pd.DataFrame, params: TransportParams, time_limit: float = 10.0) -
     sources, dests, supply, demand, cost = _parse(df, params)
     m, n = cost.shape
     routes = [(i, j) for i in range(m) for j in range(n) if not np.isnan(cost[i, j])]
-    if len(routes) > MAX_VARIABLES:
-        raise OptimizationError(f"Too many routes ({len(routes)}); the limit is {MAX_VARIABLES}")
+    check_size(len(routes), "routes")
     label = "Total transport cost"
     solver = {"name": "HiGHS (LP)", "variables": len(routes), "constraints": m + n}
     started = time.perf_counter()

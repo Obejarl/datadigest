@@ -8,3 +8,5 @@ data:
   MAX_UPLOAD_MB: "10"
   MAX_ROWS: "200000"
   RETENTION_DAYS: "7"
+  STUCK_AFTER_MINUTES: "15"     # cleanup fails jobs older than this that never finished
+  OPT_TIME_LIMIT_SECONDS: "10"  # upper bound for one solver run

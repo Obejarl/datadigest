@@ -120,7 +120,7 @@ function confirmDialog({ title, body, confirmText = "Confirm", danger = false })
 async function deleteDataset(dataset) {
   const sure = await confirmDialog({
     title: "Delete this dataset?",
-    body: `“${dataset.filename}” and its report will be removed permanently.`,
+    body: `“${dataset.filename}”, its report and any optimization runs on it will be removed permanently.`,
     confirmText: "Delete",
     danger: true,
   });

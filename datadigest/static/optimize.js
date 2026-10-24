@@ -149,6 +149,24 @@ function columnValues(profile) {
 
 const nice = (x) => (x >= 100 ? Math.round(x) : Math.round(x * 10) / 10);
 
+/** Choose which numeric columns take part (tasks, destinations). */
+function columnsField(label, columns, isDefault, hint) {
+  const list = el("div", { class: "res-list cols-list" });
+  const items = columns.map((c) => {
+    const box = el("input", { type: "checkbox" });
+    box.checked = isDefault(c.name);
+    list.append(el("label", { class: "check" }, box, c.name));
+    return { name: c.name, box };
+  });
+  return {
+    node: field(label, list, hint, true),
+    get: () => { const chosen = items.filter((i) => i.box.checked).map((i) => i.name); return chosen.length ? chosen : null; },
+    set: (names) => { if (names) for (const i of items) i.box.checked = names.includes(i.name); },
+  };
+}
+
+const ID_LIKE = /(^|_)id$|^index$|^#$|^no$/i;
+
 const pick = (cols, pattern, fallback) => (cols.find((c) => pattern.test(c.name)) || fallback || cols[0] || {}).name;
 
 /** Build the form for one problem type from a dataset profile. Returns {nodes, collect}. */
@@ -187,11 +205,14 @@ function buildForm(kind, profile) {
     return form(fields);
   }
   if (kind === "transport") {
+    const supply = pick(num, /supply|capacity|stock|available/i);
     return form({
       source_column: selectField("Source names (factories, warehouses)", names(text.length ? text : all), nameGuess),
-      supply_column: selectField("Supply column", names(num), pick(num, /supply|capacity|stock|available/i), "Units each source can ship"),
+      supply_column: selectField("Supply column", names(num), supply, "Units each source can ship"),
       demand_label: textField("Label of the demand row", "demand",
-        "One row with this label holds each destination's demand; other numeric columns are destinations with unit costs."),
+        "One row with this label holds each destination's demand."),
+      destination_columns: columnsField("Destinations (unit cost columns)", num, (n) => n !== supply && !ID_LIKE.test(n),
+        "Each ticked column is a destination; cells are the cost per unit, empty = no route."),
     });
   }
   if (kind === "assignment") {
@@ -199,9 +220,10 @@ function buildForm(kind, profile) {
     sense.el.options[0].textContent = "Maximise the total (scores, profit)";
     sense.el.options[1].textContent = "Minimise the total (cost, time)";
     return form({
-      agent_column: selectField("Agent names (people, machines)", names(text.length ? text : all), nameGuess,
-        "Every other numeric column is a task; empty cells mean not allowed."),
+      agent_column: selectField("Agent names (people, machines)", names(text.length ? text : all), nameGuess),
       sense,
+      task_columns: columnsField("Tasks (score or cost columns)", num, (n) => !ID_LIKE.test(n),
+        "Each ticked column is a task; empty cells mean the pairing is not allowed."),
     });
   }
   const value = selectField("Value of choosing an item", names(num), pick(num, /return|value|profit|benefit|npv|score/i), "Maximised");
@@ -230,6 +252,7 @@ function form(fields) {
 let currentForm = null;
 let currentKind = null;
 let currentKinds = null;
+let pendingPrefill = null;  // params of an earlier run, applied once its form is built
 
 async function openConfig(kind, kinds, datasets, datasetId) {
   currentKind = kind;
@@ -263,6 +286,7 @@ async function rebuildForm() {
     const spec = currentKinds && currentKinds.get(currentKind);
     const filename = document.getElementById("config-dataset").selectedOptions[0]?.textContent.split(" · ")[0];
     if (spec && filename === spec.sample) currentForm.apply(spec.example);  // known-good inputs for the demo file
+    if (pendingPrefill) { currentForm.apply(pendingPrefill); pendingPrefill = null; }
     box.replaceChildren(...currentForm.nodes);
   } catch (err) {
     box.replaceChildren(el("p", { class: "muted", text: `Could not read the columns: ${err.message}` }));
@@ -361,7 +385,16 @@ async function initOptimize() {
   });
 
   const wantKind = params.get("kind");
-  if (wantKind && kinds.has(wantKind)) openConfig(wantKind, kinds, ready, params.get("dataset"));
+  if (params.get("from")) {
+    // "Change inputs" on a result page: reopen the form with that run's dataset and parameters.
+    try {
+      const run = await api(`/api/optimizations/${params.get("from")}`);
+      pendingPrefill = run.params;
+      const list = ready.some((d) => d.id === run.dataset_id) ? ready : [...ready, ...datasets.filter((d) => d.id === run.dataset_id)];
+      await openConfig(run.kind, kinds, list, run.dataset_id);
+      toast("Inputs of the earlier run loaded: change them and solve again");
+    } catch (err) { toast(err.message, COLORS.red); }
+  } else if (wantKind && kinds.has(wantKind)) openConfig(wantKind, kinds, ready, params.get("dataset"));
   else if (params.get("dataset")) {
     const d = ready.find((x) => x.id === params.get("dataset"));
     if (d) toast(`Pick a problem type to run on ${d.filename}`);
@@ -386,7 +419,7 @@ async function loadOptimization(id, kinds) {
   }
   document.getElementById("chips").replaceChildren(...chips);
 
-  const again = `/optimize?dataset=${o.dataset_id}&kind=${o.kind}`;
+  const again = `/optimize?from=${o.id}`;
   document.getElementById("change-inputs").href = again;
   document.getElementById("fix-inputs").href = again;
   document.getElementById("dataset-link").href = `/datasets/${o.dataset_id}`;

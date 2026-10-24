@@ -252,3 +252,26 @@ def test_capacity_plan_recommends_minimum_meeting_target():
     )
     assert result["hpa"]["maxReplicas"] >= result["hpa"]["minReplicas"] == rec
     json.dumps(result, allow_nan=False)
+
+
+def test_oversized_models_are_refused_with_advice():
+    big = pd.DataFrame({"product": [f"p{i}" for i in range(20_001)], "profit": 1.0, "r": 1.0})
+    with pytest.raises(OptimizationError, match="Too many products"):
+        run(
+            "production",
+            big,
+            {
+                "name_column": "product",
+                "objective_column": "profit",
+                "resources": [{"column": "r", "capacity": 10}],
+            },
+        )
+    wide = pd.DataFrame({"who": ["a"], **{f"t{i}": [1.0] for i in range(1_501)}})
+    with pytest.raises(OptimizationError, match="Too many tasks"):
+        run("assignment", wide, {"agent_column": "who"})
+
+
+def test_explicit_task_and_destination_columns_are_respected():
+    df = pd.DataFrame({"who": ["a", "b"], "id": [1, 2], "t1": [9, 1], "t2": [1, 9]})
+    result = run("assignment", df, {"agent_column": "who", "task_columns": ["t1", "t2"]})
+    assert {r[1] for r in rows(result, "assignments")} == {"t1", "t2"}  # 'id' is not treated as a task

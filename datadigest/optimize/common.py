@@ -18,6 +18,10 @@ import pandas as pd
 CYAN, VIOLET, GREEN, AMBER, RED, GREY = "#22D3EE", "#A78BFA", "#10E39A", "#FFC857", "#FF4D6D", "#64748B"
 EPS = 1e-7
 MAX_VARIABLES = 20_000
+# Hungarian is O(n^3): 1,500 x 1,500 still solves in about a second.
+MAX_ASSIGNMENT_SIDE = 1_500
+# The what-if curve re-solves the model 16 times; skip it for big models to keep runs short.
+MAX_VARIABLES_FOR_WHAT_IF = 2_000
 
 
 class OptimizationError(ValueError):
@@ -47,6 +51,14 @@ def labels(df: pd.DataFrame, column: str) -> list[str]:
         dupes = ", ".join(values[values.duplicated()].unique()[:3])
         raise OptimizationError(f"Names in '{column}' must be unique; repeated: {dupes}")
     return values.tolist()
+
+
+def check_size(count: int, what: str, limit: int = MAX_VARIABLES) -> None:
+    """Refuse models that would tie up a worker for minutes; the message says what to do instead."""
+    if count > limit:
+        raise OptimizationError(
+            f"Too many {what} ({count:,}); the limit is {limit:,}. Aggregate or filter the data first."
+        )
 
 
 def numeric_columns(df: pd.DataFrame, exclude: set[str]) -> list[str]:
