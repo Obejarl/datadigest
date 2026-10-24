@@ -13,7 +13,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 app = FastAPI(
     title="DataDigest",
-    version="0.4.1",
+    version="0.4.2",
     description="Upload a CSV, get an automatic data-quality profile, charts and an HTML report.",
 )
 app.include_router(routes_health.router)

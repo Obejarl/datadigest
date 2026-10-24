@@ -110,9 +110,9 @@ Okuma sırası önerisi: REST → Kuyruk/Worker → Docker → Compose → Kuber
 **Dene:**
 
 ```bash
-docker build -t datadigest:0.4.1 .
+docker build -t datadigest:0.4.2 .
 docker image ls datadigest
-docker history datadigest:0.4.1
+docker history datadigest:0.4.2
 ```
 
 Sonra kodda bir satır değiştirip tekrar build et. Hangi katmanların önbellekten geldiğine bak.
@@ -209,7 +209,16 @@ Her komutta neye bakacağın:
    - manifest çapraz kontrolü,
    - `kubeconform` (Kubernetes şema doğrulaması).
 2. **integration:** GitHub'ın açtığı **gerçek** PostgreSQL ve Redis container'larına karşı uçtan uca test. Önce migration'lar yukarı, aşağı, tekrar yukarı çalıştırılır.
-3. **docker:** Image'ı build eder, container'ı başlatır, `/readyz`'a istek atar.
+3. **docker:** Image'ı build eder, container'ı başlatır, [`smoke_test.sh`](../scripts/smoke_test.sh) ile profil ve dört optimizasyonu container içinde çözer.
+4. **compose:** Tüm sistemi `docker compose up` ile kaldırır ve duman testini kuyruk üzerinden koşar. İşlerin iki worker container'ına da dağıldığını kontrol eder.
+5. **kubernetes:** [kind](https://kind.sigs.k8s.io/) ile GitHub'ın makinesinde **gerçek bir Kubernetes kümesi** kurar. İmajı yükleyip `kubectl apply -k k8s/` yapar, ardından şunları kontrol eder:
+   - StatefulSet, migration Job'ı ve Deployment'lar hazır mı,
+   - pod'larda yeniden başlatma (crash loop) var mı,
+   - duman testi Service üzerinden geçiyor mu,
+   - CronJob elle tetiklenince başarıyla bitiyor mu,
+   - API ve `postgres-0` pod'ları silinince Kubernetes onları yeniden yaratıyor mu ve veri (PVC sayesinde) kayboluyor mu.
+
+   Bu iş, yerelde Docker olmadan da kümede çalıştığının kanıtı.
 
 **Neden iki test katmanı:** Birim testleri hızlıdır ve her yerde çalışır. Ama SQLite ile PostgreSQL arasında farklar var (JSONB, saat dilimi, foreign key). Entegrasyon testi bunları yakalar.
 
@@ -306,8 +315,9 @@ Her biri testte ya da tarayıcıda ölçerek bulundu. Hepsi düzeltildi; çoğun
 | Ulaştırmada "1 birim talep −21 ekler" çıkıyordu | Dual değerin işareti kısıtın yazılış yönüne bağlıdır (≤ ya da ≥). Çözüm: "1 birim artırıp yeniden çöz" testi. |
 | Form varsayılanları uygulanamaz bir model kuruyordu | Varsayılan değerler de veridir. Hiç düşünmeden "ortalama × satır" demek yerine minimum talebi karşılayan kapasite hesaplandı. |
 | Mobilde Optimize sayfası 776px'e genişliyordu | `position: absolute` bir öğe, en yakın konumlandırılmış ataya göre yerleşir. Kaydırma kutusu konumlandırılmamışsa öğe kutudan kaçar. `backdrop-filter` de yeni bir kapsayıcı blok oluşturur. |
-| Düzeltilen CSS tarayıcıya ulaşmadı | Tarayıcı önbelleği. Çözüm: HTML `no-cache` ile sunulur, statik dosyalar sürümlü (`style.css?v=0.4.1`) bağlanır. |
+| Düzeltilen CSS tarayıcıya ulaşmadı | Tarayıcı önbelleği. Çözüm: HTML `no-cache` ile sunulur, statik dosyalar sürümlü (`style.css?v=0.4.2`) bağlanır. |
 | Örnek CSV'ler git'te "değişmiş" görünüyordu | pandas Windows'ta CRLF yazar. Çıktıyı işletim sisteminden bağımsız yapmak için `lineterminator="\n"`. |
+| Kubernetes'te worker pod'u ilk saniyelerde 2 kez yeniden başladı | Pod'lar bağımlılıklarından (Redis, PostgreSQL) önce açılabilir. Çökmek yerine artan bekleme süreleriyle yeniden denemek (exponential backoff) gerekir. CI artık yeniden başlatma sayısının 0 olduğunu kontrol ediyor. |
 | `sales.csv` ile kâr kolonu testi beklenmedik biçimde başarısız oldu | Veride 5 tekrar eden satır var, `order_id` benzersiz değil. Test, sistemin başka (ve doğru) bir hatayı önce yakaladığını gösterdi. |
 
 Genel ders: "çalışıyor gibi görünüyor" ile "doğru" arasındaki farkı ölçmek gerekiyor. Bunun yolları:

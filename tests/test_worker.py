@@ -108,3 +108,47 @@ def test_fail_stuck_marks_old_pending_jobs(factory):
             assert (ds.status, ds.error) == (Status.FAILED, STUCK_MESSAGE)
         assert db.get(Dataset, fresh).status == Status.PROCESSING
         assert db.get(Dataset, old_done).status == Status.DONE
+
+
+def test_worker_waits_out_outages_with_backoff_instead_of_crashing(factory):
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    class FlakyRedis:
+        """Fails three times (Redis still starting), then the test stops the worker."""
+
+        def __init__(self):
+            self.calls = 0
+
+        def brpop(self, keys, timeout):
+            self.calls += 1
+            if self.calls <= 3:
+                raise RedisConnectionError("connection refused")
+            worker.stop()
+            return None
+
+    waits = []
+    worker = Worker(FlakyRedis(), factory, QUEUE)
+    worker.run_forever(sleep=waits.append)
+    assert waits == [1.0, 2.0, 4.0]  # exponential backoff, and the loop survived
+
+
+def test_backoff_is_capped(factory):
+    from redis.exceptions import ConnectionError as RedisConnectionError
+
+    from datadigest.worker import MAX_BACKOFF_SECONDS
+
+    class DownRedis:
+        def __init__(self):
+            self.calls = 0
+
+        def brpop(self, keys, timeout):
+            self.calls += 1
+            if self.calls > 8:
+                worker.stop()
+                return None
+            raise RedisConnectionError("down")
+
+    waits = []
+    worker = Worker(DownRedis(), factory, QUEUE)
+    worker.run_forever(sleep=waits.append)
+    assert max(waits) == MAX_BACKOFF_SECONDS

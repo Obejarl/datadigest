@@ -166,8 +166,8 @@ docker compose up --build
 ### 4. Kubernetes (Docker Desktop, kind or minikube)
 
 ```bash
-docker build -t datadigest:0.4.1 .
-# kind: kind load docker-image datadigest:0.4.1   minikube: minikube image load datadigest:0.4.1
+docker build -t datadigest:0.4.2 .
+# kind: kind load docker-image datadigest:0.4.2   minikube: minikube image load datadigest:0.4.2
 cp k8s/secret.example.yaml k8s/secret.yaml           # then change the password
 kubectl apply -k k8s/
 kubectl -n datadigest get pods -w
@@ -194,12 +194,21 @@ python scripts/check_manifests.py        # cross-checks selectors, ports, refs, 
 `/readyz`, profiles a sample, solves all four optimization examples and calls the capacity
 planner.
 
-GitHub Actions runs three jobs:
-- lint, unit tests, manifest checks and `kubeconform` schema validation;
-- integration tests against real PostgreSQL and Redis service containers, including a
-  migration up/down/up;
-- a Docker build, then that smoke test against the running container (which proves the
-  SciPy solver and the sample files are in the image).
+GitHub Actions runs five jobs on every push:
+- **test:** lint, unit tests, manifest checks and `kubeconform` schema validation;
+- **integration:** tests against real PostgreSQL and Redis service containers, including a
+  migration up/down/up and all four optimizers through the queue;
+- **docker:** a Docker build, then that smoke test against the running container (which
+  proves the SciPy solver and the sample files are in the image);
+- **compose:** the full `docker compose` stack (PostgreSQL, Redis, migration, API, two
+  workers), the smoke test through the queue, and a check that both workers processed jobs;
+- **kubernetes:** a real cluster with [kind](https://kind.sigs.k8s.io/), then
+  `kubectl apply -k k8s/` and these checks:
+  - the StatefulSet, the migration Job and the Deployments become ready, with no crash
+    loops;
+  - the smoke test passes through the Service;
+  - the cleanup CronJob runs once;
+  - after the API and database pods are deleted, the data is still there.
 
 ## Design decisions
 

@@ -1,5 +1,7 @@
 # ---- build stage: compile wheels with the full toolchain available ----------
 FROM python:3.13-slim AS builder
+# pip runs as root only while building the image; the app itself runs as a non-root user.
+ENV PIP_ROOT_USER_ACTION=ignore PIP_DISABLE_PIP_VERSION_CHECK=1
 WORKDIR /build
 COPY requirements.txt .
 RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
@@ -7,7 +9,9 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 # ---- runtime stage: only the installed packages and our code ---------------
 FROM python:3.13-slim
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PIP_ROOT_USER_ACTION=ignore \
+    PIP_DISABLE_PIP_VERSION_CHECK=1
 
 RUN useradd --create-home --uid 1000 app
 WORKDIR /app

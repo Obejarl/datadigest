@@ -128,6 +128,12 @@ jobs:
           kubectl -n datadigest rollout status deploy/api --timeout=180s
           kubectl -n datadigest rollout status deploy/worker --timeout=180s
           kubectl -n datadigest get pods -o wide
+      - name: No crash loops (workers wait for Redis and PostgreSQL instead of crashing)
+        run: |
+          restarts=$(kubectl -n datadigest get pods -l 'app in (api,worker)' \
+            -o jsonpath='{range .items[*]}{.status.containerStatuses[0].restartCount}{"\n"}{end}' | awk '{s+=$1} END {print s+0}')
+          echo "container restarts in api/worker pods: $restarts"
+          [ "$restarts" -eq 0 ]
       - name: Smoke test through the Service
         run: |
           kubectl -n datadigest port-forward svc/api 8000:80 > port-forward.log 2>&1 &

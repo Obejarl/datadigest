@@ -11,8 +11,12 @@ from __future__ import annotations
 import logging
 import signal
 import sys
+import time
 
 from redis import Redis
+from redis.exceptions import ConnectionError as RedisConnectionError
+from redis.exceptions import TimeoutError as RedisTimeoutError
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from datadigest import jobqueue
@@ -23,6 +27,8 @@ from datadigest.jobs import process_dataset, process_optimization
 log = logging.getLogger("datadigest.worker")
 
 HANDLERS = {"dataset": process_dataset, "optimization": process_optimization}
+TRANSIENT_ERRORS = (RedisConnectionError, RedisTimeoutError, OperationalError)
+MAX_BACKOFF_SECONDS = 30.0
 
 
 class Worker:
@@ -48,10 +54,22 @@ class Worker:
         handler(job.id, self.factory)
         return True
 
-    def run_forever(self) -> None:
+    def run_forever(self, sleep=time.sleep) -> None:
+        """Loop until stopped. Outages of Redis or PostgreSQL (for example while a pod starts
+        before them) are waited out with exponential backoff instead of crashing the process,
+        which would otherwise put the pod into CrashLoopBackOff."""
         log.info("worker started, waiting for jobs on %r", self.queue)
+        delay = 1.0
         while not self.stopping:
-            self.run_once()
+            try:
+                self.run_once()
+                delay = 1.0
+            except TRANSIENT_ERRORS as exc:
+                log.warning(
+                    "queue or database unavailable (%s); retrying in %.0f s", type(exc).__name__, delay
+                )
+                sleep(delay)
+                delay = min(delay * 2, MAX_BACKOFF_SECONDS)
         log.info("worker stopped")
 
 
