@@ -62,5 +62,31 @@ services:
       redis:
         condition: service_healthy
 
+  # ---- optional monitoring:  docker compose --profile monitoring up --build ----
+  # Prometheus on http://localhost:9090, Grafana on http://localhost:3000 (dashboard "DataDigest").
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    profiles: ["monitoring"]
+    volumes:
+      - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    depends_on: [api, worker]
+
+  grafana:
+    image: grafana/grafana:11.4.0
+    profiles: ["monitoring"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin   # local demo only; change it anywhere else
+      GF_AUTH_ANONYMOUS_ENABLED: "true"   # open the dashboard without logging in
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/datadigest.json
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus]
+
 volumes:
   pgdata:

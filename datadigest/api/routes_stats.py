@@ -41,12 +41,12 @@ def stats(
     ).all()
     seconds = [(finished - created).total_seconds() for created, finished in timings]
 
-    queue_depth = None
+    queue = None
     if redis is not None:
         try:
-            queue_depth = jobqueue.depth(redis, settings.queue_name)
+            queue = jobqueue.stats(redis, settings.queue_name)
         except Exception:
-            queue_depth = None
+            queue = None
 
     return StatsOut(
         datasets=sum(by_status.values()),
@@ -56,5 +56,7 @@ def stats(
         avg_quality=round(quality, 1) if quality is not None else None,
         avg_seconds=round(sum(seconds) / len(seconds), 2) if seconds else None,
         mode="worker" if redis is not None else "inline",
-        queue_depth=queue_depth,
+        queue_depth=queue["pending"] if queue else None,
+        queue_in_flight=queue["in_flight"] if queue else None,
+        queue_dead=queue["dead"] if queue else None,
     )

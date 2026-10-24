@@ -1,15 +1,20 @@
-"""The unit of work: turn one uploaded dataset into a stored profile.
+"""The units of work: profile one uploaded dataset, or run one optimization.
 
 Called by the worker (Redis mode) or by FastAPI BackgroundTasks (inline mode).
+Both are idempotent, which the at-least-once queue relies on: running a job twice
+overwrites the first result with an identical one.
 """
 
 from __future__ import annotations
 
 import logging
+import time
 import uuid
+from datetime import datetime
 
 from sqlalchemy.orm import sessionmaker
 
+from datadigest import metrics
 from datadigest.config import get_settings
 from datadigest.core.loader import LoadError, load_csv
 from datadigest.core.profile import build_profile
@@ -19,6 +24,32 @@ from datadigest.optimize.common import OptimizationError
 
 log = logging.getLogger(__name__)
 
+MODELS = {"dataset": Dataset, "optimization": Optimization}
+
+
+def _seconds_between(start: datetime | None, end: datetime) -> float | None:
+    # SQLite returns naive datetimes, PostgreSQL aware ones; both are UTC.
+    if start is None:
+        return None
+    return (end.replace(tzinfo=None) - start.replace(tzinfo=None)).total_seconds()
+
+
+def _start(record, kind: str, db) -> float:
+    record.status, record.started_at = Status.PROCESSING, utcnow()
+    db.commit()
+    wait = _seconds_between(record.queued_at or record.created_at, record.started_at)
+    if wait is not None and wait >= 0:
+        metrics.JOB_WAIT.labels(kind).observe(wait)
+    return time.perf_counter()
+
+
+def _finish(record, kind: str, db, started: float) -> Status:
+    record.finished_at = utcnow()
+    db.commit()
+    metrics.JOB_DURATION.labels(kind).observe(time.perf_counter() - started)
+    metrics.JOBS.labels(kind, record.status).inc()
+    return Status(record.status)
+
 
 def process_dataset(dataset_id: uuid.UUID, factory: sessionmaker) -> Status | None:
     with factory() as db:
@@ -26,8 +57,7 @@ def process_dataset(dataset_id: uuid.UUID, factory: sessionmaker) -> Status | No
         if dataset is None:  # deleted while waiting in the queue
             log.info("dataset %s no longer exists, skipping", dataset_id)
             return None
-        dataset.status, dataset.started_at = Status.PROCESSING, utcnow()
-        db.commit()
+        started = _start(dataset, "dataset", db)
 
         try:
             raw = db.get(DatasetFile, dataset_id).content
@@ -43,12 +73,11 @@ def process_dataset(dataset_id: uuid.UUID, factory: sessionmaker) -> Status | No
             dataset.cols = profile["summary"]["columns"]
             dataset.warnings_count = len(profile["warnings"])
             dataset.quality_score = profile["summary"]["quality"]["score"]
-            dataset.status = Status.DONE
+            dataset.status, dataset.error = Status.DONE, None
 
-        dataset.finished_at = utcnow()
-        db.commit()
-        log.info("dataset %s -> %s", dataset_id, dataset.status)
-        return Status(dataset.status)
+        status = _finish(dataset, "dataset", db, started)
+        log.info("dataset %s -> %s", dataset_id, status)
+        return status
 
 
 def process_optimization(optimization_id: uuid.UUID, factory: sessionmaker) -> Status | None:
@@ -58,8 +87,7 @@ def process_optimization(optimization_id: uuid.UUID, factory: sessionmaker) -> S
         if opt is None:
             log.info("optimization %s no longer exists, skipping", optimization_id)
             return None
-        opt.status, opt.started_at = Status.PROCESSING, utcnow()
-        db.commit()
+        started = _start(opt, "optimization", db)
 
         try:
             raw = db.get(DatasetFile, opt.dataset_id).content
@@ -76,9 +104,20 @@ def process_optimization(optimization_id: uuid.UUID, factory: sessionmaker) -> S
             opt.result_status = result["status"]
             opt.objective = result["objective"]
             opt.uplift_pct = (result.get("baseline") or {}).get("uplift_pct")
-            opt.status = Status.DONE
+            opt.status, opt.error = Status.DONE, None
 
-        opt.finished_at = utcnow()
-        db.commit()
-        log.info("optimization %s (%s) -> %s", optimization_id, opt.kind, opt.status)
-        return Status(opt.status)
+        status = _finish(opt, "optimization", db, started)
+        log.info("optimization %s (%s) -> %s", optimization_id, opt.kind, status)
+        return status
+
+
+def mark_failed(kind: str, job_id: uuid.UUID, factory: sessionmaker, message: str) -> None:
+    """Record a job the queue gave up on, so the user sees "failed, try again" instead of a spinner."""
+    model = MODELS.get(kind)
+    if model is None:
+        return
+    with factory() as db:
+        record = db.get(model, job_id)
+        if record is not None and record.status != Status.DONE:
+            record.status, record.error, record.finished_at = Status.FAILED, message[:500], utcnow()
+            db.commit()

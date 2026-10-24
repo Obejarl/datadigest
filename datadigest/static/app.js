@@ -174,6 +174,7 @@ async function refreshStatus() {
       ? pill("ok", "Worker mode", true, "Uploads are queued in Redis and profiled by worker processes")
       : pill("warn", "Inline mode", true, "No Redis configured: the API profiles uploads itself"));
     if (stats.queue_depth !== null) items.push(pill(stats.queue_depth ? "warn" : "ok", `Queue ${stats.queue_depth}`, true, "Jobs waiting for a worker"));
+    if (stats.queue_dead) items.push(pill("bad", `Dead letters ${stats.queue_dead}`, true, "Jobs that failed every retry; their datasets or runs are marked failed"));
   }
   pills.replaceChildren(...items);
   return stats;

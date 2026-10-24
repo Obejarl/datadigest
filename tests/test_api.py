@@ -211,3 +211,26 @@ def test_pages_are_revalidated_and_reference_versioned_assets(client):
         assert r.status_code == 200
         assert r.headers["cache-control"] == "no-cache"
         assert "style.css?v=" in r.text
+
+
+def test_metrics_endpoint_reports_requests_jobs_and_queue(queued_client, redis, factory):
+    from datadigest.worker import Worker
+
+    upload(queued_client)
+    Worker(redis, factory, "datadigest:jobs", housekeeping_seconds=None).run_once(timeout=1)
+    queued_client.get("/api/datasets")
+    body = queued_client.get("/metrics").text
+
+    assert 'datadigest_http_requests_total{method="GET",route="/api/datasets",status="200"}' in body
+    assert 'datadigest_jobs_total{kind="dataset",status="done"}' in body
+    assert 'datadigest_queue_jobs{state="pending"} 0.0' in body
+    assert 'datadigest_datasets{status="done"} 1.0' in body
+    assert "datadigest_job_duration_seconds_bucket" in body
+
+
+def test_metrics_use_route_templates_not_raw_ids(client):
+    dataset_id = upload(client).json()["id"]
+    client.get(f"/api/datasets/{dataset_id}")
+    body = client.get("/metrics").text
+    assert 'route="/api/datasets/{dataset_id}"' in body
+    assert dataset_id not in body

@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     samples_dir: str = "samples"
     # Upper bound for one solver run; HiGHS returns its best plan so far when it is reached.
     opt_time_limit_seconds: float = 10.0
+    # Reliable queue: a job a worker took but did not finish within this time is given back
+    # to the queue, up to max_job_attempts times, then parked in the dead-letter list.
+    job_visibility_seconds: float = 120.0
+    max_job_attempts: int = 3
+    # Each worker serves Prometheus metrics on this port (0 disables it).
+    worker_metrics_port: int = 9100
 
     @property
     def max_upload_bytes(self) -> int:

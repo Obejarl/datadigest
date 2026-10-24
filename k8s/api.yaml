@@ -11,6 +11,10 @@ spec:
     metadata:
       labels:
         app: api
+      annotations:   # picked up by a Prometheus with the common kubernetes-pods scrape config
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "8000"
+        prometheus.io/path: /metrics
     spec:
       securityContext:
         runAsNonRoot: true

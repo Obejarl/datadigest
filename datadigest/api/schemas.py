@@ -40,6 +40,8 @@ class StatsOut(BaseModel):
     avg_seconds: float | None
     mode: str
     queue_depth: int | None
+    queue_in_flight: int | None = None
+    queue_dead: int | None = None
 
 
 class OptimizationOut(BaseModel):

@@ -1,0 +1,7 @@
+apiVersion: 1
+providers:
+  - name: DataDigest
+    folder: DataDigest
+    type: file
+    options:
+      path: /var/lib/grafana/dashboards

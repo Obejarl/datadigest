@@ -53,7 +53,21 @@ Okuma sırası önerisi: REST → Kuyruk/Worker → Docker → Compose → Kuber
 
 **SIGTERM:** Kubernetes bir pod'u kapatırken önce SIGTERM gönderir, `terminationGracePeriodSeconds` kadar bekler, sonra öldürür. Worker sinyali yakalayıp elindeki işi bitirir, sonra çıkar. Bunun için [`Worker.stop`](../datadigest/worker.py)'a bak.
 
-**Worker çökerse ne olur?** Elindeki iş kaybolur ve veri seti `queued` ya da `processing` durumunda kalır. Bunun için bir "reaper" var: [`cleanup.py`](../datadigest/cleanup.py) içindeki `fail_stuck`. CronJob her 15 dakikada bir çalışıp `STUCK_AFTER_MINUTES`'tan uzun süredir bekleyen işleri `failed` yapar. Kullanıcı arayüzde "Try again" ile işi yeniden başlatır. Bunun API karşılığı `POST /api/datasets/{id}/reprocess`. Otomatik yeniden deneme için bir sonraki adım `BLMOVE` ile güvenilir kuyruk.
+**Worker çökerse ne olur? Güvenilir kuyruk.** İlk sürümde `BRPOP` kullanılıyordu: iş kuyruktan çıkar çıkmaz worker'ındı. Worker ölürse iş de giderdi. Şimdiki tasarım ([`jobqueue.py`](../datadigest/jobqueue.py)) şöyle:
+1. Worker işi `BLMOVE` ile **atomik olarak** kuyruktan `processing` listesine taşır. İş hiçbir an iki listenin dışında değildir.
+2. İş bitince worker onaylar (**ack**) ve iş listeden silinir.
+3. Worker onaylamadan ölürse iş `processing`'de kalır. Her worker periyodik olarak **görünürlük zaman aşımını** (`JOB_VISIBILITY_SECONDS`) aşan işleri kuyruğa geri koyar.
+4. `MAX_JOB_ATTEMPTS` denemeden sonra iş **ölü mektup (dead-letter)** listesine gider ve veri seti "failed" olur.
+
+Bu garantinin adı **at-least-once** (en az bir kez): bir iş iki kez çalışabilir. Bu yüzden işleyiciler **idempotent** olmak zorunda, yani iki kez çalışınca sonuç değişmemeli. Bizimkiler öyle: tekrar profil çıkarmak öncekinin üzerine yazar. SQS, RQ ve Celery de aynı mantıkla çalışır.
+
+Kubernetes CI işi bunu gerçekten deniyor:
+- worker'lar 0'a indiriliyor,
+- bir süreç işi alıp onaylamadan "ölüyor",
+- yeni bir worker açılıyor,
+- iş kuyruğa geri dönüp bitiyor.
+
+Son çare olarak [`cleanup.py`](../datadigest/cleanup.py) içindeki `fail_stuck` hâlâ duruyor. CronJob, 15 dakikadan uzun süredir bekleyen işleri "failed" yapar. Bu, Redis'in kendisi işi kaybederse diye var.
 
 **Inline mod:** `REDIS_URL` yoksa API işi `BackgroundTasks` ile kendisi yapar. Yerel geliştirme için pratik ama ölçeklenmez.
 
@@ -110,9 +124,9 @@ Okuma sırası önerisi: REST → Kuyruk/Worker → Docker → Compose → Kuber
 **Dene:**
 
 ```bash
-docker build -t datadigest:0.4.2 .
+docker build -t datadigest:0.5.0 .
 docker image ls datadigest
-docker history datadigest:0.4.2
+docker history datadigest:0.5.0
 ```
 
 Sonra kodda bir satır değiştirip tekrar build et. Hangi katmanların önbellekten geldiğine bak.
@@ -304,7 +318,36 @@ Fark, optimizasyonun neden işe yaradığının somut kanıtı: örneklerde %5 i
 
 ---
 
-## 10. Bu projede yakalanan hatalar ve öğrettikleri
+## 10. Gözlemlenebilirlik: Prometheus ve Grafana
+
+"Sistem çalışıyor mu, ne kadar hızlı, nerede tıkanıyor?" sorusunu log okuyarak cevaplamak zordur. **Metrik**, zaman içinde ölçülen bir sayıdır. Tanımlar [`metrics.py`](../datadigest/metrics.py) içinde. Üç türü var:
+
+| Tür | Ne | Örnek |
+|---|---|---|
+| **Counter** | Sadece artar | `datadigest_jobs_total{kind="dataset", status="done"}` |
+| **Gauge** | İner çıkar | `datadigest_queue_jobs{state="pending"}` |
+| **Histogram** | Değerleri kovalara sayar; yüzdelik hesaplanır | `datadigest_job_duration_seconds` |
+
+**Nasıl toplanıyor:**
+- API `/metrics` ucunu sunar. Her worker kendi metriklerini 9100 portunda sunar.
+- **Prometheus** bunları 5 saniyede bir çeker (scrape). Worker'ları DNS ile bulur: `worker` adı bütün kopyalara çözülür, yani ölçekleyince ayar değişmez ([`prometheus.yml`](../deploy/prometheus/prometheus.yml)).
+- **Grafana** Prometheus'a sorgu atıp panoyu çizer. Pano kod olarak üretiliyor: [`make_dashboard.py`](../deploy/grafana/make_dashboard.py).
+
+**Etiket (label) kardinalitesi:** HTTP metriklerindeki yol etiketi `/api/datasets/{dataset_id}` biçiminde bir şablon. Gerçek id (`/api/datasets/3f2a…`) koysaydık her veri seti için yeni bir zaman serisi oluşurdu ve Prometheus'un belleği şişerdi. Bunun bir testi var.
+
+**Örnek PromQL:**
+- `rate(datadigest_http_requests_total[1m])`: saniyedeki istek sayısı.
+- `histogram_quantile(0.95, sum by (le) (rate(datadigest_job_duration_seconds_bucket[5m])))`: işlerin %95'i bu süreden kısa bitiyor (p95).
+- `sum(datadigest_queue_jobs{state="dead"}) > 0`: ölü mektup var (bir uyarı kuralı adayı).
+
+**Dene:**
+1. `docker compose --profile monitoring up --build`
+2. http://localhost:3000 adresinde DataDigest panosunu aç, birkaç dosya yükle ve çizgilerin hareket ettiğini izle.
+3. `docker compose stop redis` ile Redis'i durdur ve "waits for Redis/PostgreSQL" çizgisinin yükseldiğini gör.
+
+---
+
+## 11. Bu projede yakalanan hatalar ve öğrettikleri
 
 Her biri testte ya da tarayıcıda ölçerek bulundu. Hepsi düzeltildi; çoğunun artık bir testi var.
 
@@ -315,7 +358,7 @@ Her biri testte ya da tarayıcıda ölçerek bulundu. Hepsi düzeltildi; çoğun
 | Ulaştırmada "1 birim talep −21 ekler" çıkıyordu | Dual değerin işareti kısıtın yazılış yönüne bağlıdır (≤ ya da ≥). Çözüm: "1 birim artırıp yeniden çöz" testi. |
 | Form varsayılanları uygulanamaz bir model kuruyordu | Varsayılan değerler de veridir. Hiç düşünmeden "ortalama × satır" demek yerine minimum talebi karşılayan kapasite hesaplandı. |
 | Mobilde Optimize sayfası 776px'e genişliyordu | `position: absolute` bir öğe, en yakın konumlandırılmış ataya göre yerleşir. Kaydırma kutusu konumlandırılmamışsa öğe kutudan kaçar. `backdrop-filter` de yeni bir kapsayıcı blok oluşturur. |
-| Düzeltilen CSS tarayıcıya ulaşmadı | Tarayıcı önbelleği. Çözüm: HTML `no-cache` ile sunulur, statik dosyalar sürümlü (`style.css?v=0.4.2`) bağlanır. |
+| Düzeltilen CSS tarayıcıya ulaşmadı | Tarayıcı önbelleği. Çözüm: HTML `no-cache` ile sunulur, statik dosyalar sürümlü (`style.css?v=0.5.0`) bağlanır. |
 | Örnek CSV'ler git'te "değişmiş" görünüyordu | pandas Windows'ta CRLF yazar. Çıktıyı işletim sisteminden bağımsız yapmak için `lineterminator="\n"`. |
 | Kubernetes'te worker pod'u ilk saniyelerde 2 kez yeniden başladı | Pod'lar bağımlılıklarından (Redis, PostgreSQL) önce açılabilir. Çökmek yerine artan bekleme süreleriyle yeniden denemek (exponential backoff) gerekir. CI artık yeniden başlatma sayısının 0 olduğunu kontrol ediyor. |
 | `sales.csv` ile kâr kolonu testi beklenmedik biçimde başarısız oldu | Veride 5 tekrar eden satır var, `order_id` benzersiz değil. Test, sistemin başka (ve doğru) bir hatayı önce yakaladığını gösterdi. |
@@ -330,4 +373,4 @@ Genel ders: "çalışıyor gibi görünüyor" ile "doğru" arasındaki farkı ö
 
 ## Mülakatta 60 saniyede anlatım
 
-> "CSV yükleyince otomatik veri kalitesi raporu çıkaran bir servis yazdım. API dosyayı alıp 202 döner ve işi Redis kuyruğuna atar. Worker'lar pandas ile profil çıkarıp PostgreSQL'e JSONB olarak yazar. Analiz CPU-ağır olduğu için worker'ları API'den ayırdım ve Kubernetes'te HPA ile CPU'ya göre ölçekliyorum. Migration'lar Job, eski veri temizliği CronJob. Liveness ile readiness'ı bilerek ayırdım: veritabanı gidince pod'lar trafikten çıkıyor ama yeniden başlamıyor. CI'da hem SQLite ile hızlı birim testleri hem de gerçek PostgreSQL/Redis ile entegrasyon testleri koşuyor. Aynı veriler üzerinde yöneylem araştırması da var: LP/MIP ile üretim planı, ulaştırma, atama ve bütçe seçimi. Her sonuç gölge fiyatlarla açıklanıyor ve basit kurala göre ne kadar daha iyi olduğu gösteriliyor; optimallik testlerde kaba kuvvetle doğrulanıyor. Kuyruk teorisiyle de (M/M/c) uygulamanın kendi worker sayısını ve HPA ayarlarını hesaplıyorum. Bilinen zayıflığı, worker çökerse işin kaybolması. Çözümü BLMOVE ile güvenilir kuyruk."
+> "CSV yükleyince otomatik veri kalitesi raporu çıkaran bir servis yazdım. API dosyayı alıp 202 döner ve işi Redis kuyruğuna atar. Worker'lar pandas ile profil çıkarıp PostgreSQL'e JSONB olarak yazar. Analiz CPU-ağır olduğu için worker'ları API'den ayırdım ve Kubernetes'te HPA ile CPU'ya göre ölçekliyorum. Migration'lar Job, eski veri temizliği CronJob. Liveness ile readiness'ı bilerek ayırdım: veritabanı gidince pod'lar trafikten çıkıyor ama yeniden başlamıyor. CI'da hem SQLite ile hızlı birim testleri hem de gerçek PostgreSQL/Redis ile entegrasyon testleri koşuyor. Aynı veriler üzerinde yöneylem araştırması da var: LP/MIP ile üretim planı, ulaştırma, atama ve bütçe seçimi. Her sonuç gölge fiyatlarla açıklanıyor ve basit kurala göre ne kadar daha iyi olduğu gösteriliyor; optimallik testlerde kaba kuvvetle doğrulanıyor. Kuyruk teorisiyle de (M/M/c) uygulamanın kendi worker sayısını ve HPA ayarlarını hesaplıyorum. Kuyruk en az bir kez teslim garantili: worker ölürse iş otomatik olarak geri döner, üç denemeden sonra ölü mektuba düşer. İşleyiciler bu yüzden idempotent. Her şey Prometheus metrikleri ve bir Grafana panosuyla izleniyor."

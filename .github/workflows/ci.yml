@@ -76,13 +76,13 @@ jobs:
         run: sh scripts/smoke_test.sh http://localhost:8000 || (docker logs api; exit 1)
 
   compose:
-    name: Full stack with Docker Compose (PostgreSQL, Redis, 2 workers)
+    name: Full stack with Docker Compose (PostgreSQL, Redis, 2 workers, Prometheus, Grafana)
     runs-on: ubuntu-latest
     needs: test
     steps:
       - uses: actions/checkout@v5
-      - name: Start the stack
-        run: docker compose up -d --build
+      - name: Start the stack with monitoring
+        run: docker compose --profile monitoring up -d --build
       - name: Smoke test through the queue
         run: sh scripts/smoke_test.sh http://localhost:8000
       - name: Check that both workers did part of the work
@@ -96,6 +96,23 @@ jobs:
           done
           echo "jobs done: $total by $workers workers"
           [ "$workers" -eq 2 ] && [ "$total" -ge 9 ]
+      - name: Prometheus scrapes the API and both workers and sees the jobs
+        run: |
+          promql() { curl -fsS -G localhost:9090/api/v1/query --data-urlencode "query=$1" \
+            | python3 -c "import json,sys; r=json.load(sys.stdin)['data']['result']; print(int(float(r[0]['value'][1])) if r else 0)"; }
+          for i in $(seq 1 30); do
+            up=$(promql 'sum(up)'); jobs=$(promql 'sum(datadigest_jobs_total{status="done"})')
+            [ "$up" -ge 3 ] && [ "$jobs" -ge 9 ] && break; sleep 2
+          done
+          echo "targets up: $up, jobs done according to Prometheus: $jobs"
+          [ "$up" -ge 3 ] && [ "$jobs" -ge 9 ]
+      - name: Grafana has the data source and the dashboard
+        run: |
+          for i in $(seq 1 30); do curl -fsS localhost:3000/api/health >/dev/null 2>&1 && break; sleep 2; done
+          curl -fsS -u admin:admin localhost:3000/api/datasources/uid/prometheus/health \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print('datasource:', d['status']); assert d['status'] == 'OK'"
+          curl -fsS -u admin:admin localhost:3000/api/dashboards/uid/datadigest \
+            | python3 -c "import json,sys; d=json.load(sys.stdin)['dashboard']; print('dashboard:', d['title'], len(d['panels']), 'panels'); assert len(d['panels']) == 10"
       - name: Logs on failure
         if: failure()
         run: docker compose ps -a && docker compose logs --tail 80
@@ -143,6 +160,34 @@ jobs:
           kubectl -n datadigest logs deploy/worker > worker.log
           grep -E "optimization .* -> done" worker.log
           [ "$(grep -cE "optimization .* -> done" worker.log)" -ge 4 ]
+      - name: The worker serves Prometheus metrics
+        run: |
+          kubectl -n datadigest port-forward deploy/worker 9100:9100 > pf-metrics.log 2>&1 &
+          for i in $(seq 1 20); do curl -fsS localhost:9100/metrics > worker-metrics.txt 2>/dev/null && break; sleep 1; done
+          grep -E '^datadigest_jobs_total\{kind="optimization",status="done"\} [4-9]' worker-metrics.txt
+      - name: Crash recovery - a job abandoned by a dead worker is retried automatically
+        run: |
+          kubectl -n datadigest scale deploy/worker --replicas=0
+          kubectl -n datadigest wait --for=delete pod -l app=worker --timeout=120s || true  # may already be gone
+          dataset=$(curl -fsS -X POST localhost:8000/api/samples/tr_survey.csv | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          # A "worker" takes the job and dies without acking it (taken at t=0, so it is already stale).
+          kubectl -n datadigest exec -i deploy/api -- python - <<'PY'
+          from datadigest import jobqueue
+          from datadigest.config import get_settings
+          s = get_settings()
+          job = jobqueue.dequeue(jobqueue.connect(s.redis_url), s.queue_name, 5, now=0)
+          print("taken and abandoned:", job.raw)
+          PY
+          curl -fsS "localhost:8000/api/datasets/$dataset" | python3 -c "import json,sys; print('before recovery:', json.load(sys.stdin)['status'])"
+          kubectl -n datadigest scale deploy/worker --replicas=1
+          kubectl -n datadigest rollout status deploy/worker --timeout=120s
+          for i in $(seq 1 60); do
+            status=$(curl -fsS "localhost:8000/api/datasets/$dataset" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
+            [ "$status" = "done" ] && break; sleep 2
+          done
+          echo "after recovery: $status"
+          kubectl -n datadigest logs deploy/worker | grep "requeued dataset:$dataset"
+          [ "$status" = "done" ]
       - name: Run the cleanup CronJob once
         run: |
           kubectl -n datadigest create job --from=cronjob/cleanup cleanup-now
