@@ -9,3 +9,4 @@ __pycache__/
 *.report.html
 .env
 k8s/secret.yaml
+logs/

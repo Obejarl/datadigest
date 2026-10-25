@@ -176,6 +176,12 @@ Interactive docs: `http://localhost:8000/docs`
 
 ## Running it
 
+### 0. Windows: one double-click
+
+`DataDigest.bat` installs the Python environment, starts the app and opens the dashboard.
+It also has a menu for Docker, demo data, health checks, tests and stopping
+(`DataDigest.bat start|docker|monitoring|demo|health|test|stop`).
+
 ### 1. CLI only (no services)
 
 ```bash
