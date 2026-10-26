@@ -42,7 +42,7 @@ services:
   api:
     <<: *app
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"   # localhost only: the app has no login, do not expose it to the network
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -70,7 +70,7 @@ services:
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
-      - "9090:9090"
+      - "127.0.0.1:9090:9090"
     depends_on: [api, worker]
 
   grafana:
@@ -85,7 +85,7 @@ services:
       - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
       - ./deploy/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
-      - "3000:3000"
+      - "127.0.0.1:3000:3000"   # anonymous viewer + admin/admin: local demo only
     depends_on: [prometheus]
 
 volumes:

@@ -278,7 +278,9 @@ GitHub Actions runs five jobs on every push:
 - The cleanup CronJob still fails anything left `processing` for `STUCK_AFTER_MINUTES`, as
   a last resort if Redis itself lost the job (Redis runs without persistence here).
 - Profiling loads the file into memory, so it is capped at 200k rows (`MAX_ROWS`).
-- There is no authentication: anyone who can reach the API can see every dataset.
+- There is no authentication: anyone who can reach the API can see every dataset. Compose
+  therefore publishes its ports on `127.0.0.1` only, and Grafana's `admin/admin` login and
+  anonymous viewer are for local demos. Do not expose this stack to a network as is.
 - Optimization models are capped at 20,000 products/items/routes and 1,500 agents or
   tasks, and each run at `OPT_TIME_LIMIT_SECONDS` (10 s). At the limit HiGHS returns its
   best plan so far, marked "time limit".
