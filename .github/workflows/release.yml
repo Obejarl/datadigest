@@ -1,6 +1,6 @@
 name: Release
 
-# Push a tag like v0.6.0 to release: the image is built, smoke-tested in a container, pushed to
+# Push a tag like v0.7.0 to release: the image is built, smoke-tested in a container, pushed to
 # GitHub Container Registry, and a GitHub Release is created from the CHANGELOG entry.
 on:
   push:
@@ -27,16 +27,22 @@ jobs:
           image="ghcr.io/${GITHUB_REPOSITORY,,}"
           echo "IMAGE=$image" >> "$GITHUB_ENV"
           docker build -t "$image:${GITHUB_REF_NAME#v}" -t "$image:latest" .
+          docker build --target spark -t "$image:${GITHUB_REF_NAME#v}-spark" -t "$image:spark" .
       - name: Smoke-test the image before publishing it
         run: |
           docker run -d --name api -p 8000:8000 -e DATABASE_URL=sqlite:////tmp/dd.db "$IMAGE:latest" \
             sh -c "alembic upgrade head && uvicorn datadigest.api.main:app --host 0.0.0.0 --port 8000"
           sh scripts/smoke_test.sh http://localhost:8000 || { docker logs api; exit 1; }
+      - name: Smoke-test the Spark variant
+        run: |
+          docker run --rm "$IMAGE:spark" python -m datadigest.cli profile samples/sales.csv --engine spark             | python -c "import json,sys; p=json.load(sys.stdin)['summary']; assert p['engine']=='spark' and p['rows']==1005"
       - name: Push to GitHub Container Registry
         run: |
           echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
           docker push "$IMAGE:${GITHUB_REF_NAME#v}"
           docker push "$IMAGE:latest"
+          docker push "$IMAGE:${GITHUB_REF_NAME#v}-spark"
+          docker push "$IMAGE:spark"
       - name: Create the GitHub Release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

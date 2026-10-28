@@ -392,6 +392,25 @@ async function loadSamples() {
   box.hidden = false;
 }
 
+/** Files too big to upload sit in the server's LARGE_DATA_DIR; offer them when that is configured. */
+async function loadServerFiles() {
+  const box = document.getElementById("server-files");
+  let info;
+  try { info = await api("/api/server-files"); } catch { return; }
+  if (!info.enabled || !info.files.length) return;
+  const label = info.spark ? "Large files on the server (profiled with Spark):" : "Files on the server:";
+  box.replaceChildren(el("span", { text: label }), ...info.files.map((f) => {
+    const btn = el("button", { class: "sample", type: "button" }, f.name, el("small", { text: fmtBytes(f.size_bytes) }));
+    btn.addEventListener("click", async () => {
+      btn.disabled = true;
+      try { location.href = `/datasets/${(await api(`/api/server-files/${encodeURIComponent(f.name)}`, { method: "POST" })).id}`; }
+      catch (err) { btn.disabled = false; toast(err.message, COLORS.red); }
+    });
+    return btn;
+  }));
+  box.hidden = false;
+}
+
 function initIndex() {
   const drop = document.getElementById("drop");
   const input = document.getElementById("file");
@@ -416,6 +435,7 @@ function initIndex() {
   document.getElementById("kpis").replaceChildren(...skeletonTiles(4));
   renderTable();
   loadSamples();
+  loadServerFiles();
   refreshIndex().catch((err) => toast(err.message, COLORS.red));
   setInterval(() => refreshStatus().then(renderKpis), STATUS_MS);
 }
@@ -554,7 +574,8 @@ function renderOverview(profile, charts) {
 
   const facts = [
     ["Encoding", s.encoding], ["Delimiter", s.delimiter === "\t" ? "TAB" : s.delimiter],
-    ["Rows × columns", `${fmtNumber(s.rows)} × ${s.columns}`], ["Memory", fmtBytes(s.memory_bytes)],
+    ["Rows × columns", `${fmtNumber(s.rows)} × ${s.columns}`], [s.engine === "spark" ? "Size on disk" : "Memory", fmtBytes(s.memory_bytes)],
+    ["Engine", s.engine || "pandas"],
     ["Duplicate rows", fmtNumber(s.duplicate_rows)], ["Truncated", s.truncated ? "yes (row limit)" : "no"],
   ];
   document.getElementById("facts").replaceChildren(...facts.flatMap(([k, v]) => [el("dt", { text: k }), el("dd", { text: v })]));
@@ -727,7 +748,7 @@ async function loadDataset(id, mode) {
   document.title = `${dataset.filename} · DataDigest`;
   document.getElementById("title").textContent = dataset.filename;
   document.getElementById("crumb").textContent = dataset.filename;
-  const chips = [fmtBytes(dataset.size_bytes), `uploaded ${fmtAgo(dataset.created_at)}`];
+  const chips = [fmtBytes(dataset.size_bytes), `${dataset.source_path ? "registered" : "uploaded"} ${fmtAgo(dataset.created_at)}`];
   if (dataset.finished_at && dataset.status === "done") {
     const started = dataset.queued_at || dataset.created_at;
     chips.push(`profiled in ${((new Date(dataset.finished_at) - new Date(started)) / 1000).toFixed(2)} s`);
@@ -746,6 +767,7 @@ async function loadDataset(id, mode) {
   }
   document.getElementById("actions").hidden = false;
   document.getElementById("optimize-link").href = `/optimize?dataset=${id}`;
+  document.getElementById("optimize-link").hidden = Boolean(dataset.source_path);  // optimizers read the stored upload
   document.getElementById("report-actions").hidden = dataset.status !== "done";
   document.getElementById("rerun").hidden = dataset.status !== "done";
   if (dataset.status === "failed") {
@@ -761,7 +783,8 @@ async function loadDataset(id, mode) {
   const s = profile.summary;
   document.getElementById("chips").append(
     el("span", { class: "chip", text: s.encoding }),
-    el("span", { class: "chip", text: `sep ${s.delimiter === "\t" ? "TAB" : s.delimiter}` }));
+    el("span", { class: "chip", text: `sep ${s.delimiter === "\t" ? "TAB" : s.delimiter}` }),
+    el("span", { class: "chip", text: `engine ${s.engine || "pandas"}` }));
 
   document.getElementById("result").hidden = false;  // before charts: they measure their containers
   renderTiles(profile, dataset);

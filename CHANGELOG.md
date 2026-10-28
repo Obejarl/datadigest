@@ -3,6 +3,27 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (0.x: the API may still change between minors).
 
+## [0.7.0] - 2026-10-29
+
+### Added
+- **Apache Spark profiling engine** for files that do not fit in one process's memory. It produces
+  the same profile JSON as the pandas engine (so the dashboard, charts, quality score and report work
+  unchanged) and is covered by a test that compares both engines on real and deliberately messy files.
+  Parquet files (single files and folders) are supported. Spark is optional: `requirements-spark.txt`
+  and a Java 17+ runtime; nothing else imports it.
+- **Server-side files.** Set `LARGE_DATA_DIR` and files in that folder can be profiled by name:
+  `GET /api/server-files`, `POST /api/server-files/{name}`, and a row of buttons on the dashboard.
+  Names are validated so they cannot point outside the folder. Datasets record which engine produced
+  them (`engine`, shown on the dataset page); migration `0005`.
+- **Engine choice** (`--engine auto|pandas|spark` on the CLI): `auto` uses Spark for Parquet and files of
+  at least `SPARK_MIN_MB` (default 100) when Spark is installed, otherwise pandas.
+- `scripts/benchmark_engines.py`: times both engines and measures their peak memory on synthetic files.
+- A `spark` Docker target (`docker build --target spark .`, published as `:spark` on release), and a
+  `spark` CI job with a coverage gate on the Spark module.
+
+### Changed
+- Server-side files are profiled only; optimizations need an uploaded file (`409` otherwise).
+
 ## [0.6.0] - 2026-10-29
 
 ### Added

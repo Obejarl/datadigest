@@ -33,6 +33,10 @@ class Dataset(Base):
     cols: Mapped[int | None] = mapped_column(Integer, default=None)
     warnings_count: Mapped[int | None] = mapped_column(Integer, default=None)
     quality_score: Mapped[int | None] = mapped_column(Integer, default=None)
+    # Set for files read from LARGE_DATA_DIR instead of uploaded (there is no DatasetFile row then).
+    source_path: Mapped[str | None] = mapped_column(String(255), default=None)
+    # Which profiler produced the result: "pandas" or "spark".
+    engine: Mapped[str | None] = mapped_column(String(16), default=None)
     # JSONB on PostgreSQL (indexable, compact), plain JSON on SQLite.
     profile: Mapped[dict | None] = mapped_column(
         JSON().with_variant(JSONB(), "postgresql"), default=None, deferred=True

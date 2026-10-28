@@ -34,6 +34,28 @@ jobs:
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
           ./kubeconform -strict -summary -ignore-filename-pattern kustomization.yaml k8s/
 
+  spark:
+    name: Spark engine (matches pandas)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.13"
+          cache: pip
+          cache-dependency-path: requirements*.txt
+      # The runner image ships several JDKs; Spark 4 needs 17 or newer.
+      - name: Use Java 21
+        run: echo "JAVA_HOME=$JAVA_HOME_21_X64" >> "$GITHUB_ENV"
+      - run: pip install -r requirements-dev.txt -r requirements-spark.txt
+      - name: Spark tests, with a coverage gate on the Spark module
+        run: >
+          python -m pytest -m spark -q --cov=datadigest.core.spark_profile --cov-config=scripts/coveragerc-spark
+          --cov-report=term-missing --cov-fail-under=90
+      - name: Compare the engines on a 300,000-row file
+        run: python scripts/benchmark_engines.py 300000
+
   integration:
     name: Integration tests (PostgreSQL + Redis)
     runs-on: ubuntu-latest
@@ -79,6 +101,10 @@ jobs:
             sh -c "alembic upgrade head && uvicorn datadigest.api.main:app --host 0.0.0.0 --port 8000"
       - name: Profile a sample and solve all four optimization examples in the container
         run: sh scripts/smoke_test.sh http://localhost:8000 || (docker logs api; exit 1)
+      - name: Build the Spark variant and profile a sample with Spark inside it
+        run: |
+          docker build --target spark -t datadigest:spark .
+          docker run --rm datadigest:spark python -m datadigest.cli profile samples/sales.csv --engine spark             | python -c "import json,sys; p=json.load(sys.stdin)['summary']; print(p); assert p['engine']=='spark' and p['rows']==1005"
 
   browser:
     name: Browser tests (Playwright)

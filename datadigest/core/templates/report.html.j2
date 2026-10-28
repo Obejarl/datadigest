@@ -99,7 +99,7 @@
     <div class="tile"><div class="k">Missing cells</div><div class="v">{{ summary.missing_cells_pct }}%</div></div>
     <div class="tile"><div class="k">Duplicate rows</div><div class="v">{{ summary.duplicate_rows }}</div></div>
     <div class="tile"><div class="k">Warnings</div><div class="v">{{ profile.warnings | length }}</div></div>
-    <div class="tile"><div class="k">Memory</div><div class="v">{{ summary.memory_bytes | filesize }}</div></div>
+    <div class="tile"><div class="k">{{ "Size on disk" if summary.engine == "spark" else "Memory" }}</div><div class="v">{{ summary.memory_bytes | filesize }}</div></div>
   </div>
 
   <h2>Warnings</h2>

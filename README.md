@@ -39,6 +39,9 @@ and CI that tests against real databases.
   (filter by type, sort by missing or unique values), correlations and a preview of the
   first rows. Warnings link to their column. Tab links are shareable (`#columns`), and
   the `1`-`4` keys switch tabs.
+- **Scales past pandas.** Files that do not fit in one process's memory are profiled by
+  [Apache Spark](https://spark.apache.org/) instead, with the same output (see
+  [Big files with Spark](#big-files-with-spark)).
 - **Friendly to first-time visitors.** One-click sample datasets, multi-file upload with
   progress, re-run and delete from the list, and keyboard access throughout.
 - **Recovers from crashes.** If a worker dies mid-job, the cleanup CronJob marks the job
@@ -80,6 +83,68 @@ enter a scenario (shareable as a link). It reports:
 - the cost-optimal count (worker cost against waiting cost);
 - the count needed at peak load;
 - ready-to-paste `minReplicas`/`maxReplicas` for the worker HPA.
+
+## Big files with Spark
+
+pandas loads a whole file into one process's memory. For files that do not fit, the same
+profile can be computed by Apache Spark, which reads the file in partitions and runs every
+statistic as a distributed aggregation. The result is the **same JSON**, so the dashboard,
+charts, quality score and HTML report work unchanged
+([`spark_profile.py`](datadigest/core/spark_profile.py)).
+
+```bash
+pip install -r requirements-spark.txt          # pyspark; also needs a Java 17+ runtime
+python -m datadigest.cli report big.csv --engine spark
+python -m datadigest.cli report facts.parquet  # Parquet always uses Spark
+```
+
+**In the app.** Uploads stop at 10 MB because they are stored in the database. A bigger file goes
+into a folder on the server instead (`LARGE_DATA_DIR`, for example a mounted volume) and is
+registered by name; the dashboard lists such files under the samples, and the worker reads them
+from disk:
+
+```bash
+LARGE_DATA_DIR=/data REDIS_URL=redis://localhost:6379/0 python -m datadigest.worker
+curl -X POST http://localhost:8000/api/server-files/orders-2026.csv      # 202, then poll the dataset
+```
+
+The engine is picked per file (`auto`): Spark for Parquet and for files of at least `SPARK_MIN_MB`
+(default 100), pandas otherwise or when Spark is not installed. Server-side files can be profiled but
+not optimized, because the optimizers read the stored upload. `docker build --target spark .` builds
+an image with Java and pyspark for those workers; releases publish it as `ghcr.io/obejarl/datadigest:spark`.
+
+**Is it the same?** A test runs both engines on the sample files and on a deliberately messy one
+(missing values, duplicate rows and headers, a Windows-1254 file with decimal commas, a byte-order
+mark, bad dates) and compares the whole profile. Known, deliberate differences: above 5 million rows
+quantiles are approximate (the exact algorithm keeps every distinct value in memory); a row with the
+wrong number of fields is padded instead of failing the file; line breaks inside quoted fields are not
+supported (they would stop Spark from splitting the file); the "memory" figure is the size on disk.
+
+**Is it faster?** No, and it is not meant to be. Spark pays for starting a JVM and for shuffling data
+between partitions, so on one machine pandas wins as long as the file fits in memory:
+
+| Rows | File | Engine | Profile time | Wall time (incl. start-up) | Peak memory |
+|---:|---:|---|---:|---:|---:|
+| 100,000 | 5 MB | pandas | 0.2 s | 0.9 s | 139 MB |
+| 100,000 | 5 MB | spark | 26.6 s | 27.5 s | 1,431 MB |
+| 1,000,000 | 47 MB | pandas | 2.3 s | 3.0 s | 454 MB |
+| 1,000,000 | 47 MB | spark | 42.1 s | 43.2 s | 2,712 MB |
+| 5,000,000 | 241 MB | pandas | 10.8 s | 11.6 s | 1,913 MB |
+| 5,000,000 | 241 MB | spark | 84.0 s | 85.0 s | 4,847 MB |
+| 20,000,000 | 979 MB | pandas | 44.0 s | 44.7 s | 7,510 MB |
+| 20,000,000 | 979 MB | spark | 226.9 s | 227.9 s | 5,060 MB |
+
+(Windows 11, 24 threads, 32 GB RAM, Spark in local mode with a 4 GB driver, 8 columns of synthetic
+sales data. Peak memory counts the whole process tree, so it includes Spark's JVM.)
+
+What it shows: pandas is faster at every size tested, because Spark pays for starting a JVM and for
+shuffling data between partitions. The picture changes only in memory. pandas grows with the file
+(about 375 MB per million rows here, so roughly 37 GB for 100 million rows, more than this machine
+has), while Spark stays near its driver size and keeps working. At 20 million rows they are already
+in the same range (7.5 GB against 5.1 GB). Spark's real advantage is a cluster, where the partitions
+are spread over many machines; in local mode it only helps with files that do not fit in RAM.
+
+This is why `auto` keeps small files on pandas. Reproduce the table with `python scripts/benchmark_engines.py 1000000 5000000`.
 
 ## Reliability and observability
 
@@ -211,6 +276,8 @@ One Docker image runs every role:
 | `GET` | `/api/optimizations`, `/api/optimizations/{id}` | Runs, and one run with its full result |
 | `GET` | `/api/optimizations/{id}/report` | Optimization report as HTML |
 | `GET` | `/api/capacity` | M/M/c worker sizing; missing inputs come from measured job history |
+| `GET` | `/api/server-files` | Files in `LARGE_DATA_DIR` that can be registered (`enabled: false` when unset) |
+| `POST` | `/api/server-files/{name}` | Profile a file from `LARGE_DATA_DIR` (`202`; `404` for names that are not plain files in that folder) |
 | `GET` | `/api/samples` | Bundled demo files |
 | `POST` | `/api/samples/{name}` | Create a dataset from a demo file |
 | `GET` | `/api/stats` | Totals for the dashboard: datasets by status, rows, average quality and processing time, mode, queue depth |
@@ -253,8 +320,8 @@ docker compose up --build
 ### 4. Kubernetes (Docker Desktop, kind or minikube)
 
 ```bash
-docker build -t datadigest:0.6.0 .
-# kind: kind load docker-image datadigest:0.6.0   minikube: minikube image load datadigest:0.6.0
+docker build -t datadigest:0.7.0 .
+# kind: kind load docker-image datadigest:0.7.0   minikube: minikube image load datadigest:0.7.0
 cp k8s/secret.example.yaml k8s/secret.yaml           # then change the password
 kubectl apply -k k8s/
 kubectl -n datadigest get pods -w
@@ -275,6 +342,8 @@ On Docker Desktop, also add `--kubelet-insecure-tls` to its container args.
 ruff check . && ruff format --check .
 pytest --cov=datadigest --cov-fail-under=90    # unit tests: SQLite + fakeredis (coverage ~95%)
 python scripts/check_manifests.py              # cross-checks selectors, ports, refs, env vars
+pip install -r requirements-spark.txt          # optional, needs Java 17+
+pytest -m spark                                # the Spark engine must match pandas
 pip install -r requirements-e2e.txt && playwright install chromium
 pytest tests_e2e                               # browser tests (E2E_BROWSER_CHANNEL=msedge uses Edge)
 ```
@@ -283,16 +352,19 @@ pytest tests_e2e                               # browser tests (E2E_BROWSER_CHAN
 `/readyz`, profiles a sample, solves all four optimization examples and calls the capacity
 planner (set `ACCESS_TOKEN` if the server requires one).
 
-GitHub Actions runs six jobs on every push:
+GitHub Actions runs seven jobs on every push:
 - **test:** lint, unit tests with a 90% coverage gate, manifest checks and `kubeconform`
   schema validation;
+- **spark:** the Spark engine against pandas (coverage gate on the Spark module), plus a
+  benchmark run;
 - **integration:** tests against real PostgreSQL and Redis service containers, including a
   migration up/down/up and all four optimizers through the queue;
 - **browser:** [Playwright](https://playwright.dev/) drives a real browser through the dashboard:
   uploading files, tabs and keyboard shortcuts, the delete dialog, the optimizer flow,
   "Change inputs", the capacity page, phone-width layout including charts, and the sign-in flow;
 - **docker:** a Docker build, then that smoke test against the running container (which
-  proves the SciPy solver and the sample files are in the image);
+  proves the SciPy solver and the sample files are in the image), and a build of the Spark
+  variant that profiles a sample with Spark inside it;
 - **compose:** the full `docker compose` stack (PostgreSQL, Redis, migration, API, two
   workers, Prometheus, Grafana) and these checks:
   - the smoke test through the queue, and both workers processed jobs;
@@ -310,9 +382,9 @@ GitHub Actions runs six jobs on every push:
   - the cleanup CronJob runs once;
   - after the API and database pods are deleted, the data is still there.
 
-Pushing a tag such as `v0.6.0` runs the **release** workflow: it checks that the tag matches
-the version in the code and in `CHANGELOG.md`, smoke-tests the image, pushes it to
-`ghcr.io/obejarl/datadigest`, and creates the GitHub Release from the changelog.
+Pushing a tag such as `v0.7.0` runs the **release** workflow: it checks that the tag matches
+the version in the code and in `CHANGELOG.md`, smoke-tests the image (and the Spark variant),
+pushes them to `ghcr.io/obejarl/datadigest`, and creates the GitHub Release from the changelog.
 
 ## Design decisions
 
@@ -321,6 +393,10 @@ the version in the code and in `CHANGELOG.md`, smoke-tests the image, pushes it 
 - **Raw files in PostgreSQL (`bytea`, 10 MB limit).** The API and the workers then share
   no disk, so no ReadWriteMany volume is needed. Object storage would be the next step
   (see roadmap).
+- **Spark is optional and picked by size.** pyspark and a JVM are heavy, so they live in
+  `requirements-spark.txt` and a separate Docker target; the core never imports them. Big files
+  bypass the database and are read by name from `LARGE_DATA_DIR`, with the name checked so it
+  cannot point outside that folder.
 - **One profile, two renderers.** The profile is plain JSON, and the dashboard and report
   both render it with the same Plotly specs, so they never disagree.
 - **Liveness ≠ readiness.** `/healthz` checks nothing external, so a database outage does
@@ -340,7 +416,14 @@ the version in the code and in `CHANGELOG.md`, smoke-tests the image, pushes it 
 - Redis keeps its data with an append-only file synced every second, so a hard crash can
   lose about one second of new jobs. The cleanup CronJob still fails anything left
   `processing` for `STUCK_AFTER_MINUTES`, as a last resort.
-- Profiling loads the file into memory, so it is capped at 200k rows (`MAX_ROWS`).
+- The pandas engine loads the file into memory, so it is capped at 200k rows (`MAX_ROWS`); the
+  Spark engine has no row cap.
+- A Spark job can outlast the queue's visibility timeout (`JOB_VISIBILITY_SECONDS`, 120 s by
+  default), and the queue would then hand the same file to a second worker. Raise it for workers
+  that profile big files.
+- Spark runs in local mode (all cores of one machine); the code is cluster-ready but a cluster
+  deployment is not part of the manifests. On Windows it cannot start from a folder whose path has
+  non-ASCII characters (the error says so).
 - Access control is one shared token (`ACCESS_TOKEN`), not per-user accounts: everyone who has
   it sees every dataset. Without it, anyone who can reach the API can. Compose therefore
   publishes its ports on `127.0.0.1` only, and Grafana's `admin/admin` login and anonymous
@@ -362,16 +445,18 @@ the version in the code and in `CHANGELOG.md`, smoke-tests the image, pushes it 
 - [ ] Per-user accounts instead of one shared token
 - [ ] Alertmanager (the alert rules exist; notifications do not)
 - [ ] Multi-objective optimization and sensitivity ranges for the solvers
+- [ ] Spark on a cluster (Kubernetes) instead of local mode, and optimizers for server-side files
 - [ ] A hosted live demo
 
 ## Project layout
 
 ```
-datadigest/core/      pure profiling: loader, profile, charts, report (no DB, no HTTP)
+datadigest/core/      pure profiling: loader, profile (pandas), spark_profile, engines, charts, report (no DB, no HTTP)
 datadigest/optimize/  pure solvers: production, transport, assignment, knapsack, capacity (M/M/c)
 datadigest/api/       FastAPI routes, schemas, dependencies
 datadigest/static/    dashboard (plain HTML/CSS/JS + plotly.js)
-datadigest/*.py       config, db, models, jobs, queue, worker, cleanup, CLI
+datadigest/*.py       config, db, models, jobs, queue, worker, cleanup, serverfiles, CLI
+scripts/              smoke test, manifest checks, engine benchmark
 migrations/           Alembic
 k8s/                  Kubernetes manifests (kustomize)
 tests/                unit + integration tests

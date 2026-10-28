@@ -28,13 +28,28 @@ class Settings(BaseSettings):
     max_job_attempts: int = 3
     # Each worker serves Prometheus metrics on this port (0 disables it).
     worker_metrics_port: int = 9100
+    # Big files are profiled by Spark (optional: pip install -r requirements-spark.txt, plus Java).
+    # Files read from this directory instead of being uploaded; empty disables the feature.
+    large_data_dir: str | None = None
+    # With engine "auto", files at least this large go to Spark (when it is installed).
+    spark_min_mb: int = 100
+    spark_master: str = "local[*]"
+    # Where Spark is installed; only needed when the default (inside pyspark) cannot be used, e.g. on
+    # Windows when the install path has non-ASCII characters.
+    spark_home: str | None = None
+    spark_driver_memory: str | None = "2g"
+    spark_shuffle_partitions: int = 8
     # When set, every page and API call needs it (see datadigest/api/auth.py). Empty means off.
     access_token: str | None = None
 
-    @field_validator("access_token", mode="before")
+    @field_validator("access_token", "large_data_dir", "spark_home", mode="before")
     @classmethod
     def _blank_means_off(cls, value):
         return (value or "").strip() or None
+
+    @property
+    def spark_min_bytes(self) -> int:
+        return self.spark_min_mb * 1024 * 1024
 
     @property
     def max_upload_bytes(self) -> int:

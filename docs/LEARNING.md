@@ -124,9 +124,9 @@ Son çare olarak [`cleanup.py`](../datadigest/cleanup.py) içindeki `fail_stuck`
 **Dene:**
 
 ```bash
-docker build -t datadigest:0.6.0 .
+docker build -t datadigest:0.7.0 .
 docker image ls datadigest
-docker history datadigest:0.6.0
+docker history datadigest:0.7.0
 ```
 
 Sonra kodda bir satır değiştirip tekrar build et. Hangi katmanların önbellekten geldiğine bak.
@@ -390,7 +390,39 @@ Metrik toplamak izlemenin yarısı; öbür yarısı "bir şey ters giderse biri 
 
 ---
 
-## 13. Bu projede yakalanan hatalar ve öğrettikleri
+## 13. Apache Spark: pandas'ın yetmediği yer
+
+### Sorun: tek süreç, tek makine, her şey RAM'de
+pandas dosyanın tamamını tek bir sürecin belleğine alır; üstüne ayrıştırma sırasında kopyalar oluşur. Bellek, dosya boyutuyla doğrusal artar (README'deki ölçüm tablosuna bak). Dosya RAM'e sığmazsa pandas çöker, işlemciyi kullanan tek çekirdektir. **Spark** veriyi **bölümlere (partition)** ayırır, her bölümü ayrı bir çekirdekte (küme modunda ayrı bir makinede) işler ve yalnızca küçük sonuçları ana sürece gönderir.
+
+### Kavramlar ve projedeki karşılıkları
+| Kavram | Anlamı | Projede |
+|---|---|---|
+| **Lazy evaluation** | `select`, `where`, `groupBy` hiçbir şey çalıştırmaz, yalnızca plan kurar. İş, bir **action** çağrılınca (`count`, `first`, `collect`) başlar. | Her `.first()` / `.collect()` bir **job**'dur; bu yüzden istatistikleri tek `agg(...)` içinde toplayıp dosyayı az kez taradım ([`spark_profile.py`](../datadigest/core/spark_profile.py)). |
+| **Shuffle** | Verinin bölümler arası yeniden dağıtılması (`groupBy`, `distinct`, `countDistinct`). Ağ ve disk kullandığı için en pahalı işlem. | Tekrar eden satır sayımı (`distinct`) ve benzersiz değer sayıları shuffle ister; ölçümde en yavaş aşamalar bunlar. |
+| **persist** | Ara sonucu bellekte/diskte tutar. | Dosya bir kez ayrıştırılır, sonraki tüm taramalar önbellekten okunur. |
+| **local[*]** | Spark'ı tek makinede, tüm çekirdeklerle çalıştırır. | Varsayılan (`SPARK_MASTER`). Aynı kod, `spark://...` ya da Kubernetes adresiyle bir kümede çalışır. |
+| **Catalyst** | Spark'ın sorgu optimize edicisi: planı yeniden düzenler, gereksiz sütunları okumaz. | Parquet gibi sütunlu biçimlerde sadece gereken sütunlar okunur. |
+
+### Aynı sonucu vermek: iki motor, tek profil
+Spark'ın kendi tür çıkarımı (`inferSchema`) pandas'tan farklı karar verir; iki motor farklı skor üretirse kullanıcı hangisine güveneceğini bilemez. Bu yüzden her sütunu **metin olarak** okudum ve pandas'taki karar sırasını (sayı → bool → tarih → kategorik → metin) sayımlarla yeniden kurdum. Grafikler ve rapor aynen çalışır, çünkü çıktı aynı JSON'dur. Bunu **eşdeğerlik testi** doğruluyor: aynı dosya iki motordan geçer ve bütün profil sayı sayı karşılaştırılır ([`test_spark_profile.py`](../tests/test_spark_profile.py)).
+
+Bilinçli farklar: çok büyük dosyalarda medyan gibi yüzdelikler yaklaşık hesaplanır (`percentile_approx`), çünkü tam hesap her ayrık değeri bellekte tutar; satır içinde tırnaklı satır sonu desteklenmez, çünkü o zaman dosya paralel bölünemezdi.
+
+### Ne zaman Spark? Dürüst cevap
+Küçük dosyada Spark **daha yavaştır**: JVM'in başlaması tek başına onlarca saniye alır. Bu yüzden `auto` modu yalnızca `SPARK_MIN_MB` üstündeki dosyaları (ve Parquet'i) Spark'a verir. "Büyük veri" bir dosya boyutu değil, **tek makinenin belleğini aşıp aşmadığıdır**. Bunu ölçmek, kullanmaktan daha öğreticidir: [`scripts/benchmark_engines.py`](../scripts/benchmark_engines.py).
+
+### Büyük dosya nasıl içeri girer?
+Yükleme sınırı 10 MB, çünkü dosya veritabanında saklanıyor. Büyük dosya, sunucunun `LARGE_DATA_DIR` klasörüne konur ve **adıyla kaydedilir** (`POST /api/server-files/{ad}`). Worker dosyayı diskten okur. Güvenlik burada asıl konu: kullanıcıdan gelen ad bir **yol (path)** olmamalı. [`serverfiles.py`](../datadigest/serverfiles.py) adın düz bir dosya adı olduğunu, `..` ve alt klasör içermediğini ve sembolik bağlantı çözüldükten sonra yine o klasörde kaldığını kontrol eder (**path traversal** saldırısı).
+
+### İşletim notları
+- **Görünürlük süresi.** Kuyruk "en az bir kez" teslim eder: bir iş `JOB_VISIBILITY_SECONDS` (120 sn) içinde bitmezse kuyruğa geri verilir. Spark işi bundan uzun sürerse aynı dosya iki kez işlenir. Büyük dosyalar için bu değeri yükseltin.
+- **İmaj boyutu.** JRE ve pyspark yüzlerce MB ekler; ana imajı şişirmemek için ayrı bir Docker hedefi var (`docker build --target spark`).
+- **Windows.** Spark, yolunda ASCII olmayan karakter (`Masaüstü`) bulunan klasörden başlayamıyor; kod bunu algılayıp açıklayıcı bir hata veriyor.
+
+---
+
+## 14. Bu projede yakalanan hatalar ve öğrettikleri
 
 Her biri testte ya da tarayıcıda ölçerek bulundu. Hepsi düzeltildi; çoğunun artık bir testi var.
 
@@ -409,6 +441,10 @@ Her biri testte ya da tarayıcıda ölçerek bulundu. Hepsi düzeltildi; çoğun
 | Grafikler 375 piksel testinde hiç çizilmedi | Grafikler görünür olunca çizilir (`IntersectionObserver`). Sayfanın sonuna tek hamlede atlayınca grafik hiç görünmeden geçilir. Gerçek kullanıcı kaydırır; test de kademeli kaydırmalı. |
 | Release notları boş çıkıyordu | `awk` içindeki regex kaçışları ortama göre farklı yorumlanıyor. Düz metin karşılaştıran `index()` ile kaçış gerekmedi. Betiğin boş çıktı verirse hata vermesi de eklendi. |
 | Reddedilen istekler metriklerde görünmüyordu | Starlette'te sonradan eklenen middleware **en dışta** çalışır. Kimlik doğrulama ve metrik sırası önemli: reddedilenleri de saymak için metrik, doğrulamanın dışında olmalı. |
+| Spark'ta boş değerler histogramın son kutusuna düşüyordu | `least(a, b)` null'ı **yok sayar**: `least(29, NULL)` = 29. Eksik değerli kolonlarda son kutu şişti. Eşdeğerlik testi pandas ile farkı hemen gösterdi. Çözüm: `when(x.isNotNull(), ...)`. |
+| Spark başlıkları kendiliğinden yeniden adlandırdı | `Name` ve `name` başlıkları Spark'ta büyük/küçük harf duyarsız eşleştiği için `Name0`, `Name1` oldu. pandas ikisini ayrı tutar. Başlığı veri olarak okuyup adları kendim aldım. |
+| Spark Türkçe Excel dosyasını açmadı | Spark 4'ün CSV okuyucusu `windows-1254`'ü kabul etmiyor. Dosyayı `ISO-8859-1` (her baytı bir karaktere eşler) olarak okuyup farklı olan birkaç harfi (İ, Ş, Ğ, ı, ş, ğ) çevirdim. |
+| Spark Windows'ta hiç başlamadı | `Could not find or load main class SparkSubmit`: başlatıcı betik, yolda `ü` olduğu için sınıf yolunu bozuyor. Gerçek neden hata iletisinde yok; kod artık yolu denetleyip ne yapılacağını söylüyor. |
 | `sales.csv` ile kâr kolonu testi beklenmedik biçimde başarısız oldu | Veride 5 tekrar eden satır var, `order_id` benzersiz değil. Test, sistemin başka (ve doğru) bir hatayı önce yakaladığını gösterdi. |
 
 Genel ders: "çalışıyor gibi görünüyor" ile "doğru" arasındaki farkı ölçmek gerekiyor. Bunun yolları:
@@ -421,4 +457,4 @@ Genel ders: "çalışıyor gibi görünüyor" ile "doğru" arasındaki farkı ö
 
 ## Mülakatta 60 saniyede anlatım
 
-> "CSV yükleyince otomatik veri kalitesi raporu çıkaran bir servis yazdım. API dosyayı alıp 202 döner ve işi Redis kuyruğuna atar. Worker'lar pandas ile profil çıkarıp PostgreSQL'e JSONB olarak yazar. Analiz CPU-ağır olduğu için worker'ları API'den ayırdım ve Kubernetes'te HPA ile CPU'ya göre ölçekliyorum. Migration'lar Job, eski veri temizliği CronJob. Liveness ile readiness'ı bilerek ayırdım: veritabanı gidince pod'lar trafikten çıkıyor ama yeniden başlamıyor. CI'da hem SQLite ile hızlı birim testleri hem de gerçek PostgreSQL/Redis ile entegrasyon testleri koşuyor. Aynı veriler üzerinde yöneylem araştırması da var: LP/MIP ile üretim planı, ulaştırma, atama ve bütçe seçimi. Her sonuç gölge fiyatlarla açıklanıyor ve basit kurala göre ne kadar daha iyi olduğu gösteriliyor; optimallik testlerde kaba kuvvetle doğrulanıyor. Kuyruk teorisiyle de (M/M/c) uygulamanın kendi worker sayısını ve HPA ayarlarını hesaplıyorum. Kuyruk en az bir kez teslim garantili: worker ölürse iş otomatik olarak geri döner, üç denemeden sonra ölü mektuba düşer. İşleyiciler bu yüzden idempotent. Her şey Prometheus metrikleri ve bir Grafana panosuyla izleniyor."
+> "CSV yükleyince otomatik veri kalitesi raporu çıkaran bir servis yazdım. API dosyayı alıp 202 döner ve işi Redis kuyruğuna atar. Worker'lar pandas ile profil çıkarıp PostgreSQL'e JSONB olarak yazar. Analiz CPU-ağır olduğu için worker'ları API'den ayırdım ve Kubernetes'te HPA ile CPU'ya göre ölçekliyorum. Migration'lar Job, eski veri temizliği CronJob. Liveness ile readiness'ı bilerek ayırdım: veritabanı gidince pod'lar trafikten çıkıyor ama yeniden başlamıyor. CI'da hem SQLite ile hızlı birim testleri hem de gerçek PostgreSQL/Redis ile entegrasyon testleri koşuyor. Aynı veriler üzerinde yöneylem araştırması da var: LP/MIP ile üretim planı, ulaştırma, atama ve bütçe seçimi. Her sonuç gölge fiyatlarla açıklanıyor ve basit kurala göre ne kadar daha iyi olduğu gösteriliyor; optimallik testlerde kaba kuvvetle doğrulanıyor. Kuyruk teorisiyle de (M/M/c) uygulamanın kendi worker sayısını ve HPA ayarlarını hesaplıyorum. Kuyruk en az bir kez teslim garantili: worker ölürse iş otomatik olarak geri döner, üç denemeden sonra ölü mektuba düşer. İşleyiciler bu yüzden idempotent. Her şey Prometheus metrikleri ve bir Grafana panosuyla izleniyor. Dosya tek makinenin belleğini aşarsa aynı profili Apache Spark üretiyor: iki motor aynı JSON'u verdiği için grafikler ve rapor değişmiyor, bir eşdeğerlik testi sonuçları sayı sayı karşılaştırıyor. Spark'ın küçük dosyada pandas'tan yavaş olduğunu ölçtüm, o yüzden motor dosya boyutuna göre seçiliyor."

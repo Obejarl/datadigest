@@ -14,8 +14,9 @@ from datetime import datetime
 
 from sqlalchemy.orm import sessionmaker
 
-from datadigest import metrics
+from datadigest import metrics, serverfiles
 from datadigest.config import get_settings
+from datadigest.core.engines import profile_path
 from datadigest.core.loader import LoadError, load_csv
 from datadigest.core.profile import build_profile
 from datadigest.models import Dataset, DatasetFile, Optimization, Status, utcnow
@@ -52,6 +53,7 @@ def _finish(record, kind: str, db, started: float) -> Status:
 
 
 def process_dataset(dataset_id: uuid.UUID, factory: sessionmaker) -> Status | None:
+    settings = get_settings()
     with factory() as db:
         dataset = db.get(Dataset, dataset_id)
         if dataset is None:  # deleted while waiting in the queue
@@ -60,9 +62,12 @@ def process_dataset(dataset_id: uuid.UUID, factory: sessionmaker) -> Status | No
         started = _start(dataset, "dataset", db)
 
         try:
-            raw = db.get(DatasetFile, dataset_id).content
-            profile = build_profile(load_csv(raw, max_rows=get_settings().max_rows))
-        except LoadError as exc:
+            if dataset.source_path:  # too big to upload: read from disk, with Spark if it is large
+                profile = profile_path(serverfiles.resolve(dataset.source_path, settings), "auto", settings)
+            else:
+                raw = db.get(DatasetFile, dataset_id).content
+                profile = build_profile(load_csv(raw, max_rows=settings.max_rows))
+        except (LoadError, serverfiles.ServerFileError) as exc:
             dataset.status, dataset.error = Status.FAILED, str(exc)[:500]
         except Exception:
             log.exception("failed to process dataset %s", dataset_id)
@@ -73,6 +78,7 @@ def process_dataset(dataset_id: uuid.UUID, factory: sessionmaker) -> Status | No
             dataset.cols = profile["summary"]["columns"]
             dataset.warnings_count = len(profile["warnings"])
             dataset.quality_score = profile["summary"]["quality"]["score"]
+            dataset.engine = profile["summary"]["engine"]
             dataset.status, dataset.error = Status.DONE, None
 
         status = _finish(dataset, "dataset", db, started)

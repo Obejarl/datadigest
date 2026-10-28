@@ -103,6 +103,10 @@ def create_optimization(
     ).first()
     if dataset is None:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Dataset not found")
+    if dataset.source_path:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Optimizers read an uploaded file; server-side files are profiled only"
+        )
     # Catch typos in column names now, while the user is still on the form, if the profile is ready.
     if dataset.status == Status.DONE and dataset.profile:
         known = {c["name"] for c in dataset.profile["columns"]}

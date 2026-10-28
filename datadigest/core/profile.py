@@ -298,6 +298,7 @@ def build_profile(table: LoadedTable) -> dict[str, Any]:
             "encoding": table.encoding,
             "delimiter": table.delimiter,
             "truncated": table.truncated,
+            "engine": "pandas",
             "quality": quality_score(missing_pct, _pct(duplicates, rows), warnings),
         },
         "columns": columns,

@@ -13,6 +13,7 @@ from datadigest.api import (
     routes_health,
     routes_optimize,
     routes_samples,
+    routes_serverfiles,
     routes_stats,
 )
 
@@ -22,7 +23,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 app = FastAPI(
     title="DataDigest",
-    version="0.6.0",
+    version="0.7.0",
     description="Upload a CSV, get an automatic data-quality profile, charts and an HTML report.",
 )
 app.include_router(routes_health.router)
@@ -30,6 +31,7 @@ app.include_router(auth.router)
 app.include_router(routes_datasets.router)
 app.include_router(routes_stats.router)
 app.include_router(routes_samples.router)
+app.include_router(routes_serverfiles.router)
 app.include_router(routes_optimize.router)
 
 

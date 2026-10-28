@@ -24,5 +24,10 @@ DataDigest is built to be run on your own machine or inside a trusted network:
 - **Uploads are untrusted input.** Files are size-limited while streaming, parsed with pandas, never
   executed, and everything derived from them is HTML-escaped (report) or written with `textContent`
   (dashboard). Optimization parameters are validated against the file's own columns.
+- **`LARGE_DATA_DIR` exposes a folder to everyone who can sign in.** Files in it can be registered by
+  name and profiled. Names must be one plain file name that resolves to a file directly inside the
+  folder (no `..`, no sub-folders, symlinks that leave it are refused) and end in `.csv`, `.tsv`, `.txt`
+  or `.parquet`. Put only data you are happy to share with every user into it. The feature is off
+  unless the variable is set.
 - **Dependencies** are pinned, updated weekly by Dependabot, and GitHub's secret scanning and
   push protection are enabled.

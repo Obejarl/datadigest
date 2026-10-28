@@ -2,6 +2,7 @@
 
 python -m datadigest.cli report data.csv -o report.html
 python -m datadigest.cli profile data.csv
+python -m datadigest.cli report big.csv --engine spark     # needs requirements-spark.txt and Java
 """
 
 from __future__ import annotations
@@ -11,9 +12,11 @@ import json
 import sys
 from pathlib import Path
 
-from datadigest.core.loader import LoadError, load_csv
-from datadigest.core.profile import build_profile
+from datadigest.core.engines import ENGINES, profile_path
+from datadigest.core.loader import LoadError
 from datadigest.core.report import render_report
+
+ENGINE_HELP = "auto: Spark for Parquet and files over SPARK_MIN_MB (when installed), otherwise pandas"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -24,13 +27,15 @@ def main(argv: list[str] | None = None) -> int:
     report.add_argument("input", type=Path)
     report.add_argument("-o", "--output", type=Path, help="default: <input>.report.html")
     report.add_argument("--title")
+    report.add_argument("--engine", choices=ENGINES, default="auto", help=ENGINE_HELP)
 
     profile = sub.add_parser("profile", help="print the profile as JSON")
     profile.add_argument("input", type=Path)
+    profile.add_argument("--engine", choices=ENGINES, default="auto", help=ENGINE_HELP)
 
     args = parser.parse_args(argv)
     try:
-        result = build_profile(load_csv(args.input.read_bytes()))
+        result = profile_path(args.input, args.engine)
     except (OSError, LoadError) as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1

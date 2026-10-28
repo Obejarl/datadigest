@@ -23,7 +23,7 @@ body:
     id: version
     attributes:
       label: Version
-      placeholder: shown in the dashboard's top bar, e.g. v0.6.0
+      placeholder: shown in the dashboard's top bar, e.g. v0.7.0
   - type: textarea
     id: logs
     attributes:

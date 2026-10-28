@@ -17,6 +17,8 @@ class DatasetOut(BaseModel):
     cols: int | None
     warnings_count: int | None
     quality_score: int | None
+    engine: str | None = None
+    source_path: str | None = None
     created_at: datetime
     queued_at: datetime | None
     finished_at: datetime | None
