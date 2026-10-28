@@ -1,5 +1,17 @@
-# Redis only holds the job queue, so losing it on restart is acceptable
-# (queued jobs would need re-uploading); no volume needed.
+# Redis holds the job queue. Append-only persistence (AOF, fsync every second) on a volume
+# means queued and in-flight jobs survive a Redis restart; a hard crash can lose at most
+# about one second of the newest writes. (The cleanup CronJob still fails jobs that did not
+# finish, as a last resort.)
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: redis-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 100Mi
+---
 apiVersion: v1
 kind: Service
 metadata:
@@ -16,6 +28,8 @@ metadata:
   name: redis
 spec:
   replicas: 1
+  strategy:
+    type: Recreate         # a ReadWriteOnce volume cannot be mounted by two pods at once
   selector:
     matchLabels:
       app: redis
@@ -24,9 +38,12 @@ spec:
       labels:
         app: redis
     spec:
+      securityContext:
+        fsGroup: 1000      # the redis group in the image, so it can write to the volume
       containers:
         - name: redis
           image: redis:7-alpine
+          args: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
           ports:
             - containerPort: 6379
           readinessProbe:
@@ -36,3 +53,10 @@ spec:
           resources:
             requests: { cpu: 50m, memory: 64Mi }
             limits: { memory: 128Mi }
+          volumeMounts:
+            - name: data
+              mountPath: /data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: redis-data

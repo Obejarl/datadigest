@@ -14,8 +14,8 @@ jobs:
     name: Lint and unit tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
           cache: pip
@@ -23,7 +23,8 @@ jobs:
       - run: pip install -r requirements-dev.txt
       - run: ruff check .
       - run: ruff format --check .
-      - run: python -m pytest -q
+      - name: Unit tests with a coverage gate
+        run: python -m pytest -q --cov=datadigest --cov-report=term-missing:skip-covered --cov-fail-under=90
       - name: Syntax-check the dashboard JavaScript
         run: for f in datadigest/static/*.js; do node --check "$f" || exit 1; done
       - name: Cross-check Kubernetes manifests
@@ -54,8 +55,8 @@ jobs:
       TEST_DATABASE_URL: postgresql+psycopg://datadigest:datadigest@localhost:5432/datadigest
       TEST_REDIS_URL: redis://localhost:6379/0
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.13"
           cache: pip
@@ -70,7 +71,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - run: docker build -t datadigest:ci .
       - name: Start the API on SQLite inside the image
         run: |
@@ -84,7 +85,12 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Alert rules are valid and every alert fires when it should (promtool)
+        run: |
+          for cmd in "check rules alerts.yml" "test rules alerts_test.yml"; do
+            docker run --rm --entrypoint promtool -v "$PWD/deploy/prometheus:/rules" -w /rules               prom/prometheus:v3.1.0 $cmd
+          done
       - name: Start the stack with monitoring
         run: docker compose --profile monitoring up -d --build
       - name: Smoke test through the queue
@@ -110,6 +116,29 @@ jobs:
           done
           echo "targets up: $up, jobs done according to Prometheus: $jobs"
           [ "$up" -ge 3 ] && [ "$jobs" -ge 9 ]
+      - name: Prometheus loaded the alert rules and none is firing
+        run: |
+          for i in $(seq 1 30); do
+            n=$(curl -fsS localhost:9090/api/v1/rules | python3 -c "import json,sys; g=json.load(sys.stdin)['data']['groups']; print(sum(len(x['rules']) for x in g))" 2>/dev/null) && [ "${n:-0}" -ge 9 ] && break; sleep 2
+          done
+          echo "alert rules loaded: $n"; [ "$n" -ge 9 ]
+          firing=$(curl -fsS localhost:9090/api/v1/alerts | python3 -c "import json,sys; print(len([a for a in json.load(sys.stdin)['data']['alerts'] if a['state']=='firing']))")
+          echo "alerts firing on a healthy system: $firing"; [ "$firing" -eq 0 ]
+      - name: Queued jobs survive a Redis restart (append-only persistence)
+        run: |
+          docker compose stop worker
+          dataset=$(curl -fsS -X POST localhost:8000/api/samples/tr_survey.csv | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          echo "queued while no worker runs: $dataset"
+          docker compose restart redis
+          for i in $(seq 1 30); do docker compose exec -T redis redis-cli ping 2>/dev/null | grep -q PONG && break; sleep 1; done
+          docker compose exec -T redis redis-cli llen datadigest:jobs | tee pending.txt
+          [ "$(tr -d '[:space:]' < pending.txt)" -ge 1 ]
+          docker compose start worker
+          for i in $(seq 1 60); do
+            st=$(curl -fsS "localhost:8000/api/datasets/$dataset" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
+            [ "$st" = "done" ] && break; sleep 2
+          done
+          echo "after Redis restart and worker start: $st"; [ "$st" = "done" ]
       - name: Grafana has the data source and the dashboard
         run: |
           for i in $(seq 1 30); do curl -fsS localhost:3000/api/health >/dev/null 2>&1 && break; sleep 2; done
@@ -126,7 +155,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: test
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - name: Create a kind cluster
         run: |
           curl -sSLo kind https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64 && chmod +x kind
@@ -192,6 +221,35 @@ jobs:
           echo "after recovery: $status"
           kubectl -n datadigest logs deploy/worker | grep "requeued dataset:$dataset"
           [ "$status" = "done" ]
+      - name: Queued jobs survive a Redis pod restart (append-only persistence)
+        run: |
+          kubectl -n datadigest scale deploy/worker --replicas=0
+          kubectl -n datadigest wait --for=delete pod -l app=worker --timeout=120s || true
+          dataset=$(curl -fsS -X POST localhost:8000/api/samples/tr_survey.csv | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          kubectl -n datadigest exec deploy/redis -- redis-cli llen datadigest:jobs
+          kubectl -n datadigest delete pod -l app=redis
+          kubectl -n datadigest rollout status deploy/redis --timeout=120s
+          pending=$(kubectl -n datadigest exec deploy/redis -- redis-cli llen datadigest:jobs | tr -d '[:space:]')
+          echo "jobs still queued after the Redis pod was replaced: $pending"
+          [ "$pending" -ge 1 ]
+          kubectl -n datadigest scale deploy/worker --replicas=1
+          kubectl -n datadigest rollout status deploy/worker --timeout=120s
+          for i in $(seq 1 60); do
+            st=$(curl -fsS "localhost:8000/api/datasets/$dataset" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
+            [ "$st" = "done" ] && break; sleep 2
+          done
+          echo "final status: $st"; [ "$st" = "done" ]
+      - name: Back up the database and prove the backup restores
+        run: |
+          kubectl -n datadigest create job --from=cronjob/postgres-backup backup-now
+          kubectl -n datadigest wait --for=condition=complete job/backup-now --timeout=180s
+          kubectl -n datadigest logs job/backup-now
+          kubectl -n datadigest apply -f k8s/ops/restore-check-job.yaml
+          kubectl -n datadigest wait --for=condition=complete job/restore-check --timeout=180s
+          kubectl -n datadigest logs job/restore-check | tee restore.log
+          grep "restore check passed" restore.log
+          restored=$(sed -n 's/^datasets in the restored copy: //p' restore.log)
+          echo "datasets restored from the backup: $restored"; [ "$restored" -ge 5 ]
       - name: Run the cleanup CronJob once
         run: |
           kubectl -n datadigest create job --from=cronjob/cleanup cleanup-now
