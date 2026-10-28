@@ -124,9 +124,9 @@ Son çare olarak [`cleanup.py`](../datadigest/cleanup.py) içindeki `fail_stuck`
 **Dene:**
 
 ```bash
-docker build -t datadigest:0.5.0 .
+docker build -t datadigest:0.6.0 .
 docker image ls datadigest
-docker history datadigest:0.5.0
+docker history datadigest:0.6.0
 ```
 
 Sonra kodda bir satır değiştirip tekrar build et. Hangi katmanların önbellekten geldiğine bak.
@@ -347,7 +347,50 @@ Fark, optimizasyonun neden işe yaradığının somut kanıtı: örneklerde %5 i
 
 ---
 
-## 11. Bu projede yakalanan hatalar ve öğrettikleri
+## 11. Veri kaybına ve saldırıya karşı: kalıcılık, yedek, kimlik doğrulama
+
+### Redis kalıcılığı (AOF)
+Redis varsayılan olarak her şeyi bellekte tutar; yeniden başlayınca kuyruk boşalır. **AOF** (append-only file) her yazma komutunu bir dosyaya ekler, açılışta o dosyadan geri yükler. `appendfsync everysec` dosyayı saniyede bir diske zorlar: en kötü durumda (sert çökme) yaklaşık 1 saniyelik yazma kaybolur. Dosya bir **volume**'da durur (Compose'ta isimli volume, Kubernetes'te [`redis.yaml`](../k8s/redis.yaml) içindeki PVC), yoksa container silinince dosya da gider. `strategy: Recreate` şart: `ReadWriteOnce` bir disk iki pod'a aynı anda bağlanamaz.
+
+CI bunu gerçekten deniyor: worker'lar kapalıyken bir iş kuyruğa atılıyor, Redis pod'u siliniyor, yeni pod açılınca iş hâlâ kuyrukta ve worker açılınca bitiyor.
+
+### Yedek: "geri yüklenmemiş yedek yedek değildir"
+[`postgres-backup.yaml`](../k8s/postgres-backup.yaml) her gece `pg_dump` alır ve **hemen geri okur** (`pg_restore --list`). Okunamayan bir dosya bulunursa eski yedekler silinmez. [`restore-check-job.yaml`](../k8s/ops/restore-check-job.yaml) en yeni yedeği ayrı bir deneme veritabanına geri yükleyip tablolardaki satırları sayar; canlı veritabanına dokunmaz. CI'da 7 veri setinin geri geldiği görüldü. Sınır: yedek, veritabanının yanındaki bir diskte duruyor; kümeyi kaybedersen yedeği de kaybedersin. Bunun için yedeği küme dışına kopyalamak gerekir.
+
+### Alarm kuralları ve `promtool`
+Metrik toplamak izlemenin yarısı; öbür yarısı "bir şey ters giderse biri haberdar olsun". [`alerts.yml`](../deploy/prometheus/alerts.yml) 9 kural tanımlar. Örnek: `sum(datadigest_queue_jobs{state="dead"}) > 0` için `for: 1m`. **`for`** bir koşulun belirli süre sürekli doğru kalmasını bekler, böylece kısa bir dalgalanma alarm üretmez. Her kural [`alerts_test.yml`](../deploy/prometheus/alerts_test.yml) içinde sentetik metriklerle test edilir: "kuyruk 80 olur ve 8 dakika kalırsa alarm çalmalı; 2 dakikalık bir tepe çalmamalı".
+
+### Kimlik doğrulama: küçük ama doğru yapmak
+[`auth.py`](../datadigest/api/auth.py) isteğe bağlı tek bir paylaşılan anahtar (`ACCESS_TOKEN`) getirir. Her satırın bir nedeni var:
+- **Çerez, anahtarın kendisini değil HMAC'ini taşır.** Çerez çalınsa bile anahtar ortaya çıkmaz.
+- **`HttpOnly`:** sayfadaki JavaScript çerezi okuyamaz (XSS olsa bile çalınmaz).
+- **`SameSite=Lax`:** başka bir sitedeki form, tarayıcıya bu çerezi POST/DELETE ile göndertemez. Bu, durum değiştiren çağrıları CSRF'ten korur.
+- **`hmac.compare_digest`:** karşılaştırma süresi, kaç karakterin doğru olduğuna bağlı değildir (zamanlama saldırısı).
+- **Deneme sınırı:** dakikada 5 yanlış denemeden sonra doğru anahtar bile 429 alır.
+- **Açık yönlendirme (open redirect) koruması:** giriş sonrası `?next=` ile yönlendirirken `//evil.example` ve `/\evil.example` reddedilir ([`safeNext`](../datadigest/static/app.js)). Aksi halde saldırgan, girişten sonra kurbanı kendi sitesine gönderen bir bağlantı hazırlayabilir. Bunun tarayıcı testi var.
+- **Probe'lar ve `/metrics` açık kalır:** Kubernetes ve Prometheus çerez taşıyamaz.
+
+### Tedarik zinciri
+- **Actions SHA'ya sabit.** `actions/checkout@v5` bir etikettir ve taşınabilir; ele geçirilen bir depo aynı etikete kötü kod koyabilir. 40 karakterlik commit SHA'sı değişmez. Yanına yorum olarak sürüm yazılır (`# v5`).
+- **Dependabot** her hafta güncelleme PR'ı açar, güvenlik güncellemeleri ayrıca otomatik gelir.
+- **Salt okunur iş akışı jetonu:** `permissions: contents: read`.
+
+## 12. Test piramidi: birimden tarayıcıya
+
+| Katman | Nerede | Neyi yakalar | Süre |
+|---|---|---|---|
+| Birim (SQLite, fakeredis) | `tests/` | Mantık hataları | ~15 sn |
+| Entegrasyon (gerçek PostgreSQL/Redis) | `tests/test_integration.py` | SQLite ile PostgreSQL farkları | ~1 dk |
+| Tarayıcı (Playwright) | [`tests_e2e/`](../tests_e2e) | JavaScript, form, diyalog, düzen, grafik | ~1 dk |
+| Sistem (Compose, kind) | `.github/workflows/ci.yml` | Dağıtım, ağ, kalıcılık, kurtarma | ~3 dk |
+
+**Kapsam (coverage)** bir kodun yüzde kaçının test sırasında çalıştığını ölçer (şu an ~%95, eşik %90). Yüksek kapsam doğruluk garantisi değildir; düşük kapsam ise testsiz bölgeleri gösterir. Bu ölçüm, `cli.py`'nin hiç test edilmediğini ortaya çıkardı.
+
+**Tarayıcı testleri** daha önce yalnızca elle denediğim şeyleri otomatikleştirdi: çoklu dosya yükleme, silme onayı, `Change inputs` formunun eski parametrelerle dolması, 375 piksel genişlikte yatay kaydırma olmaması ve grafiklerin o genişliğe sığması. Yerelde kurulu Edge ile (`E2E_BROWSER_CHANNEL=msedge`), CI'da Chromium ile çalışır. Test başarısız olursa ekran görüntüsü kaydedilir.
+
+---
+
+## 13. Bu projede yakalanan hatalar ve öğrettikleri
 
 Her biri testte ya da tarayıcıda ölçerek bulundu. Hepsi düzeltildi; çoğunun artık bir testi var.
 
@@ -358,9 +401,14 @@ Her biri testte ya da tarayıcıda ölçerek bulundu. Hepsi düzeltildi; çoğun
 | Ulaştırmada "1 birim talep −21 ekler" çıkıyordu | Dual değerin işareti kısıtın yazılış yönüne bağlıdır (≤ ya da ≥). Çözüm: "1 birim artırıp yeniden çöz" testi. |
 | Form varsayılanları uygulanamaz bir model kuruyordu | Varsayılan değerler de veridir. Hiç düşünmeden "ortalama × satır" demek yerine minimum talebi karşılayan kapasite hesaplandı. |
 | Mobilde Optimize sayfası 776px'e genişliyordu | `position: absolute` bir öğe, en yakın konumlandırılmış ataya göre yerleşir. Kaydırma kutusu konumlandırılmamışsa öğe kutudan kaçar. `backdrop-filter` de yeni bir kapsayıcı blok oluşturur. |
-| Düzeltilen CSS tarayıcıya ulaşmadı | Tarayıcı önbelleği. Çözüm: HTML `no-cache` ile sunulur, statik dosyalar sürümlü (`style.css?v=0.5.0`) bağlanır. |
+| Düzeltilen CSS tarayıcıya ulaşmadı | Tarayıcı önbelleği. Çözüm: HTML `no-cache` ile sunulur, statik dosyalar sürümlü (`style.css?v=0.6.0`) bağlanır. |
 | Örnek CSV'ler git'te "değişmiş" görünüyordu | pandas Windows'ta CRLF yazar. Çıktıyı işletim sisteminden bağımsız yapmak için `lineterminator="\n"`. |
 | Kubernetes'te worker pod'u ilk saniyelerde 2 kez yeniden başladı | Pod'lar bağımlılıklarından (Redis, PostgreSQL) önce açılabilir. Çökmek yerine artan bekleme süreleriyle yeniden denemek (exponential backoff) gerekir. CI artık yeniden başlatma sayısının 0 olduğunu kontrol ediyor. |
+| Kapasite testi geçti ama yanlış bir şeyi kontrol ediyordu | Test "Recommended workers kutusu `5` içeriyor" diyordu. Varsayılan durumda kutuda zaten "meets **5** s mean wait" yazıyordu. Yanlış pozitif: test, hata olsa da geçerdi. Bir testin gerçekten başarısız olabildiğinden emin ol; değeri tam eşleştir (`to_have_text("5")`). |
+| Yeniden çalıştırma testi ara sıra yanlış sonuç verdi | Düğmeye tıklayınca istek hemen gitmez. Test, eski "done" durumunu görüp erken ölçüyordu (**yarış durumu**). Çözüm: durum değil, **yeni bir bitiş zamanı** bekle. |
+| Grafikler 375 piksel testinde hiç çizilmedi | Grafikler görünür olunca çizilir (`IntersectionObserver`). Sayfanın sonuna tek hamlede atlayınca grafik hiç görünmeden geçilir. Gerçek kullanıcı kaydırır; test de kademeli kaydırmalı. |
+| Release notları boş çıkıyordu | `awk` içindeki regex kaçışları ortama göre farklı yorumlanıyor. Düz metin karşılaştıran `index()` ile kaçış gerekmedi. Betiğin boş çıktı verirse hata vermesi de eklendi. |
+| Reddedilen istekler metriklerde görünmüyordu | Starlette'te sonradan eklenen middleware **en dışta** çalışır. Kimlik doğrulama ve metrik sırası önemli: reddedilenleri de saymak için metrik, doğrulamanın dışında olmalı. |
 | `sales.csv` ile kâr kolonu testi beklenmedik biçimde başarısız oldu | Veride 5 tekrar eden satır var, `order_id` benzersiz değil. Test, sistemin başka (ve doğru) bir hatayı önce yakaladığını gösterdi. |
 
 Genel ders: "çalışıyor gibi görünüyor" ile "doğru" arasındaki farkı ölçmek gerekiyor. Bunun yolları:

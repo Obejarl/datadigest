@@ -177,6 +177,14 @@ async function refreshStatus() {
     if (stats.queue_dead) items.push(pill("bad", `Dead letters ${stats.queue_dead}`, true, "Jobs that failed every retry; their datasets or runs are marked failed"));
   }
   pills.replaceChildren(...items);
+  try {
+    const auth = await api("/api/auth/status");
+    if (auth.required && auth.authenticated) {
+      const out = el("button", { class: "pill opt signout", type: "button", title: "Sign out of DataDigest" }, "Sign out");
+      out.addEventListener("click", async () => { await api("/api/logout", { method: "POST" }); location.href = "/login"; });
+      pills.append(out);
+    }
+  } catch {}
   return stats;
 }
 
@@ -800,5 +808,35 @@ function initDataset() {
   setInterval(refreshStatus, STATUS_MS);
 }
 
+// Only same-site paths are valid "next" targets: "//evil.example" and "/\evil.example" are not.
+function safeNext(value) {
+  return value && value.startsWith("/") && !value.startsWith("//") && !value.includes("\\") ? value : "/";
+}
+
+function initLogin() {
+  const form = document.getElementById("login-form");
+  const error = document.getElementById("login-error");
+  const submit = document.getElementById("login-submit");
+  form.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    error.hidden = true;
+    submit.disabled = true;
+    try {
+      await api("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: document.getElementById("token").value }),
+      });
+      location.href = safeNext(new URLSearchParams(location.search).get("next"));
+    } catch (err) {
+      error.textContent = err.message;
+      error.hidden = false;
+      submit.disabled = false;
+      document.getElementById("token").select();
+    }
+  });
+}
+
+if (document.body.dataset.page === "login") initLogin();
 if (document.body.dataset.page === "index") initIndex();
 if (document.body.dataset.page === "dataset") initDataset();

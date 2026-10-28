@@ -7,7 +7,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from datadigest import metrics
-from datadigest.api import routes_datasets, routes_health, routes_optimize, routes_samples, routes_stats
+from datadigest.api import (
+    auth,
+    routes_datasets,
+    routes_health,
+    routes_optimize,
+    routes_samples,
+    routes_stats,
+)
 
 STATIC = Path(__file__).parent.parent / "static"
 
@@ -15,14 +22,20 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name
 
 app = FastAPI(
     title="DataDigest",
-    version="0.5.0",
+    version="0.6.0",
     description="Upload a CSV, get an automatic data-quality profile, charts and an HTML report.",
 )
 app.include_router(routes_health.router)
+app.include_router(auth.router)
 app.include_router(routes_datasets.router)
 app.include_router(routes_stats.router)
 app.include_router(routes_samples.router)
 app.include_router(routes_optimize.router)
+
+
+# Middleware added later wraps the earlier ones, so the order here is: auth (innermost, so a
+# rejected request never reaches a route), then metrics (counts the 401s too), then headers (outermost).
+app.middleware("http")(auth.require_auth)
 
 
 @app.middleware("http")
@@ -65,6 +78,11 @@ def index():
 @app.get("/datasets/{dataset_id}", include_in_schema=False)
 def dataset_page(dataset_id: str):
     return page("dataset.html")
+
+
+@app.get("/login", include_in_schema=False)
+def login_page():
+    return page("login.html")
 
 
 @app.get("/optimize", include_in_schema=False)
