@@ -37,8 +37,12 @@ def resolve(name: str, settings: Settings) -> Path:
         raise ServerFileError("Server-side files are not enabled (set LARGE_DATA_DIR)")
     if not name or name != Path(name).name or name.startswith(".") or not name.lower().endswith(SUFFIXES):
         raise ServerFileError("Unknown file")
-    path = (base / name).resolve()  # follows symlinks, so a link out of the directory fails the check below
-    if path.parent != base or not _usable(path):
+    try:
+        path = (base / name).resolve()  # follows symlinks: a link leaving the folder fails the check below
+        usable = path.parent == base and _usable(path)
+    except (ValueError, OSError):  # e.g. a NUL byte in the name; never let it become a server error
+        usable = False
+    if not usable:
         raise ServerFileError("Unknown file")
     return path
 
