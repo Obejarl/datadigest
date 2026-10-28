@@ -1,0 +1,49 @@
+name: Release
+
+# Push a tag like v0.6.0 to release: the image is built, smoke-tested in a container, pushed to
+# GitHub Container Registry, and a GitHub Release is created from the CHANGELOG entry.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write   # create the release
+  packages: write   # push the image to ghcr.io
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: The tag must match the version in the code
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          code=$(sed -n 's/^version = "\(.*\)"/\1/p' pyproject.toml | head -1)
+          echo "tag $version, pyproject $code"
+          [ "$version" = "$code" ]
+          grep -q "^## \[$version\]" CHANGELOG.md || { echo "CHANGELOG.md has no entry for $version"; exit 1; }
+      - name: Build the image
+        run: |
+          image="ghcr.io/${GITHUB_REPOSITORY,,}"
+          echo "IMAGE=$image" >> "$GITHUB_ENV"
+          docker build -t "$image:${GITHUB_REF_NAME#v}" -t "$image:latest" .
+      - name: Smoke-test the image before publishing it
+        run: |
+          docker run -d --name api -p 8000:8000 -e DATABASE_URL=sqlite:////tmp/dd.db "$IMAGE:latest" \
+            sh -c "alembic upgrade head && uvicorn datadigest.api.main:app --host 0.0.0.0 --port 8000"
+          sh scripts/smoke_test.sh http://localhost:8000 || { docker logs api; exit 1; }
+      - name: Push to GitHub Container Registry
+        run: |
+          echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "${{ github.actor }}" --password-stdin
+          docker push "$IMAGE:${GITHUB_REF_NAME#v}"
+          docker push "$IMAGE:latest"
+      - name: Create the GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          # index() compares plain text, so no regex escaping is involved
+          awk -v v="$version" 'index($0, "## [" v "]") == 1 {f=1; next} /^## / {f=0} f' CHANGELOG.md > notes.md
+          [ -s notes.md ] || { echo "empty release notes for $version"; exit 1; }
+          printf '\n---\nImage: `%s:%s`\n' "$IMAGE" "$version" >> notes.md
+          gh release create "$GITHUB_REF_NAME" --title "DataDigest $version" --notes-file notes.md

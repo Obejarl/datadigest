@@ -110,11 +110,56 @@ Grafana comes with a provisioned **DataDigest** dashboard (10 panels, generated 
 [`deploy/grafana/make_dashboard.py`](deploy/grafana/make_dashboard.py)). In Kubernetes,
 the pods carry `prometheus.io/*` annotations.
 
+Nine **alert rules** ([`deploy/prometheus/alerts.yml`](deploy/prometheus/alerts.yml)) watch for a
+dead API or worker, dead-letter jobs, a queue backlog, jobs stuck in flight, handler crashes, high
+queue wait or API latency, and a rising 5xx rate. Each one is unit-tested with `promtool` against
+synthetic metrics. Prometheus shows firing alerts on `:9090/alerts`; add Alertmanager to be notified.
+
 CI proves all of this on every push:
 - **Compose job:** Prometheus scrapes the API and both workers and counts the finished
-  jobs, and Grafana's data source and dashboard are checked.
+  jobs, loads the alert rules, and Grafana's data source and dashboard are checked.
 - **Kubernetes job:** it scales the workers to zero, abandons a job the way a crashing
   worker would, starts a fresh worker, and checks that the job is requeued and finished.
+
+## Access control
+
+Off by default, so local use and the demos need no login. To require one, set `ACCESS_TOKEN`:
+
+```bash
+python -c "import secrets; print(secrets.token_urlsafe(32))"   # make a long random token
+echo ACCESS_TOKEN=<the token> >> .env                          # local; Compose reads it too
+```
+
+In Kubernetes, uncomment `ACCESS_TOKEN` in `k8s/secret.yaml`. Then every page and API call needs
+the token: a sign-in page sets an HttpOnly, SameSite=Lax session cookie (it holds an HMAC of the
+token, never the token), and scripts send `Authorization: Bearer <token>`. Wrong tokens are
+throttled (5 per minute per address) and compared in constant time. `/healthz`, `/readyz`,
+`/metrics` (counts and route names, no data), the login page and static files stay open so
+probes and Prometheus keep working. See [SECURITY.md](SECURITY.md).
+
+## Backups and restores
+
+- **Redis** writes an append-only file to a volume (Compose volume, Kubernetes PVC).
+- **PostgreSQL** is dumped nightly by the `postgres-backup` CronJob into its own volume. Each
+  dump is read back (`pg_restore --list`) before old ones (older than 7 days) are deleted.
+
+Take one on demand and prove it restores (the second Job restores into a scratch database and
+never touches the live one):
+
+```bash
+kubectl -n datadigest create job --from=cronjob/postgres-backup backup-now
+kubectl -n datadigest apply -f k8s/ops/restore-check-job.yaml
+kubectl -n datadigest logs job/restore-check          # prints how many datasets came back
+```
+
+To restore for real, scale the API and workers to zero, then
+`pg_restore --clean --if-exists --no-owner --dbname=datadigest <dump>` from a pod that mounts
+the `postgres-backups` volume. With Compose:
+
+```bash
+docker compose exec -T postgres pg_dump -U datadigest -Fc datadigest > backup.dump
+docker compose exec -T postgres pg_restore -U datadigest --clean --if-exists -d datadigest < backup.dump
+```
 
 ## Architecture
 
@@ -208,8 +253,8 @@ docker compose up --build
 ### 4. Kubernetes (Docker Desktop, kind or minikube)
 
 ```bash
-docker build -t datadigest:0.5.0 .
-# kind: kind load docker-image datadigest:0.5.0   minikube: minikube image load datadigest:0.5.0
+docker build -t datadigest:0.6.0 .
+# kind: kind load docker-image datadigest:0.6.0   minikube: minikube image load datadigest:0.6.0
 cp k8s/secret.example.yaml k8s/secret.yaml           # then change the password
 kubectl apply -k k8s/
 kubectl -n datadigest get pods -w
@@ -228,29 +273,46 @@ On Docker Desktop, also add `--kubelet-insecure-tls` to its container args.
 
 ```bash
 ruff check . && ruff format --check .
-pytest                                   # unit tests: SQLite + fakeredis
-python scripts/check_manifests.py        # cross-checks selectors, ports, refs, env vars
+pytest --cov=datadigest --cov-fail-under=90    # unit tests: SQLite + fakeredis (coverage ~95%)
+python scripts/check_manifests.py              # cross-checks selectors, ports, refs, env vars
+pip install -r requirements-e2e.txt && playwright install chromium
+pytest tests_e2e                               # browser tests (E2E_BROWSER_CHANNEL=msedge uses Edge)
 ```
 
 `scripts/smoke_test.sh <url>` checks a running deployment end to end. It waits for
 `/readyz`, profiles a sample, solves all four optimization examples and calls the capacity
-planner.
+planner (set `ACCESS_TOKEN` if the server requires one).
 
-GitHub Actions runs five jobs on every push:
-- **test:** lint, unit tests, manifest checks and `kubeconform` schema validation;
+GitHub Actions runs six jobs on every push:
+- **test:** lint, unit tests with a 90% coverage gate, manifest checks and `kubeconform`
+  schema validation;
 - **integration:** tests against real PostgreSQL and Redis service containers, including a
   migration up/down/up and all four optimizers through the queue;
+- **browser:** [Playwright](https://playwright.dev/) drives a real browser through the dashboard:
+  uploading files, tabs and keyboard shortcuts, the delete dialog, the optimizer flow,
+  "Change inputs", the capacity page, phone-width layout including charts, and the sign-in flow;
 - **docker:** a Docker build, then that smoke test against the running container (which
   proves the SciPy solver and the sample files are in the image);
 - **compose:** the full `docker compose` stack (PostgreSQL, Redis, migration, API, two
-  workers), the smoke test through the queue, and a check that both workers processed jobs;
+  workers, Prometheus, Grafana) and these checks:
+  - the smoke test through the queue, and both workers processed jobs;
+  - `promtool` validates the alert rules and unit-tests that each alert fires;
+  - Prometheus scrapes three targets, loaded the rules, and nothing fires on a healthy system;
+  - jobs queued while no worker runs survive a Redis restart;
 - **kubernetes:** a real cluster with [kind](https://kind.sigs.k8s.io/), then
   `kubectl apply -k k8s/` and these checks:
   - the StatefulSet, the migration Job and the Deployments become ready, with no crash
     loops;
   - the smoke test passes through the Service;
+  - a job abandoned by a dead worker is requeued and finished;
+  - queued jobs survive a Redis pod replacement;
+  - a database backup is taken and restored into a scratch database;
   - the cleanup CronJob runs once;
   - after the API and database pods are deleted, the data is still there.
+
+Pushing a tag such as `v0.6.0` runs the **release** workflow: it checks that the tag matches
+the version in the code and in `CHANGELOG.md`, smoke-tests the image, pushes it to
+`ghcr.io/obejarl/datadigest`, and creates the GitHub Release from the changelog.
 
 ## Design decisions
 
@@ -275,12 +337,17 @@ GitHub Actions runs five jobs on every push:
 - Retries are at least once, so a job can run twice (for example if a worker dies after
   saving the result but before the ack). That is harmless because the handlers are
   idempotent, but it would matter for side effects such as sending e-mails.
-- The cleanup CronJob still fails anything left `processing` for `STUCK_AFTER_MINUTES`, as
-  a last resort if Redis itself lost the job (Redis runs without persistence here).
+- Redis keeps its data with an append-only file synced every second, so a hard crash can
+  lose about one second of new jobs. The cleanup CronJob still fails anything left
+  `processing` for `STUCK_AFTER_MINUTES`, as a last resort.
 - Profiling loads the file into memory, so it is capped at 200k rows (`MAX_ROWS`).
-- There is no authentication: anyone who can reach the API can see every dataset. Compose
-  therefore publishes its ports on `127.0.0.1` only, and Grafana's `admin/admin` login and
-  anonymous viewer are for local demos. Do not expose this stack to a network as is.
+- Access control is one shared token (`ACCESS_TOKEN`), not per-user accounts: everyone who has
+  it sees every dataset. Without it, anyone who can reach the API can. Compose therefore
+  publishes its ports on `127.0.0.1` only, and Grafana's `admin/admin` login and anonymous
+  viewer are for local demos. Behind a TLS-terminating proxy, run uvicorn with
+  `--proxy-headers` so the session cookie is marked `Secure`.
+- Backups are logical dumps kept on a volume next to the database, so they protect against
+  mistakes and corruption, not against losing the cluster. Copy them off-cluster for that.
 - Optimization models are capped at 20,000 products/items/routes and 1,500 agents or
   tasks, and each run at `OPT_TIME_LIMIT_SECONDS` (10 s). At the limit HiGHS returns its
   best plan so far, marked "time limit".
@@ -292,9 +359,10 @@ GitHub Actions runs five jobs on every push:
 ## Roadmap
 
 - [ ] S3/MinIO for uploads instead of `bytea`
-- [ ] Users and API keys
-- [ ] Alerting rules (dead letters > 0, p95 latency) on top of the metrics
-- [ ] Publish the image to GHCR from CI
+- [ ] Per-user accounts instead of one shared token
+- [ ] Alertmanager (the alert rules exist; notifications do not)
+- [ ] Multi-objective optimization and sensitivity ranges for the solvers
+- [ ] A hosted live demo
 
 ## Project layout
 
@@ -307,6 +375,7 @@ datadigest/*.py       config, db, models, jobs, queue, worker, cleanup, CLI
 migrations/           Alembic
 k8s/                  Kubernetes manifests (kustomize)
 tests/                unit + integration tests
+tests_e2e/            browser tests (Playwright)
 docs/LEARNING.md      concept guide (Turkish)
 ```
 

@@ -10,3 +10,6 @@ __pycache__/
 .env
 k8s/secret.yaml
 logs/
+e2e-artifacts/
+.coverage
+htmlcov/

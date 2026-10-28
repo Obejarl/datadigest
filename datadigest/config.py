@@ -1,5 +1,6 @@
 from functools import lru_cache
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -27,6 +28,13 @@ class Settings(BaseSettings):
     max_job_attempts: int = 3
     # Each worker serves Prometheus metrics on this port (0 disables it).
     worker_metrics_port: int = 9100
+    # When set, every page and API call needs it (see datadigest/api/auth.py). Empty means off.
+    access_token: str | None = None
+
+    @field_validator("access_token", mode="before")
+    @classmethod
+    def _blank_means_off(cls, value):
+        return (value or "").strip() or None
 
     @property
     def max_upload_bytes(self) -> int:

@@ -6,6 +6,10 @@
 set -eu
 BASE="${1:-http://localhost:8000}"
 
+# With ACCESS_TOKEN set the calls carry it as a bearer token (the server may require one).
+api() {
+  if [ -n "${ACCESS_TOKEN:-}" ]; then curl -fsS -H "Authorization: Bearer $ACCESS_TOKEN" "$@"; else curl -fsS "$@"; fi
+}
 PY="${PYTHON:-python3}"  # e.g. PYTHON=.venv/Scripts/python on Windows
 json() { "$PY" -c "import json,sys; d=json.load(sys.stdin); print($1)"; }
 
@@ -19,7 +23,7 @@ done
 wait_for() {  # $1 = resource URL, prints the final "status result" line
   i=0
   while :; do
-    line=$(curl -fsS "$1" | json "d['status'], d.get('result_status') or ''")
+    line=$(api "$1" | json "d['status'], d.get('result_status') or ''")
     case "$line" in
       done*|failed*) echo "$line"; return ;;
     esac
@@ -28,17 +32,17 @@ wait_for() {  # $1 = resource URL, prints the final "status result" line
   done
 }
 
-dataset=$(curl -fsS -X POST "$BASE/api/samples/sales.csv" | json "d['id']")
+dataset=$(api -X POST "$BASE/api/samples/sales.csv" | json "d['id']")
 profile=$(wait_for "$BASE/api/datasets/$dataset")
 echo "profile: $profile"
 [ "$(echo "$profile" | cut -d' ' -f1)" = "done" ] || exit 1
 
 for kind in production transport assignment knapsack; do
-  run=$(curl -fsS -X POST "$BASE/api/optimize/examples/$kind" | json "d['id']")
+  run=$(api -X POST "$BASE/api/optimize/examples/$kind" | json "d['id']")
   result=$(wait_for "$BASE/api/optimizations/$run")
   echo "$kind: $result"
   [ "$result" = "done optimal" ] || exit 1
 done
 
-curl -fsS "$BASE/api/capacity" | json "'capacity: %s workers recommended' % d['objective']"
+api "$BASE/api/capacity" | json "'capacity: %s workers recommended' % d['objective']"
 echo "smoke test passed"

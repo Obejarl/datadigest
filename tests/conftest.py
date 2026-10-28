@@ -47,7 +47,7 @@ def queued_client(factory, redis):
     yield from _client(factory, redis)
 
 
-def upload(client, name: str = "sales.csv", content: bytes | None = None):
+def upload(client, name: str = "sales.csv", content: bytes | None = None, headers: dict | None = None):
     if content is None:
         content = (SAMPLES / name).read_bytes()
-    return client.post("/api/datasets", files={"file": (name, content, "text/csv")})
+    return client.post("/api/datasets", files={"file": (name, content, "text/csv")}, headers=headers)
