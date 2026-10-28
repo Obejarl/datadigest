@@ -1,0 +1,107 @@
+# promtool test rules alerts_test.yml
+# Each case feeds synthetic metrics and states which alert must (or must not) fire.
+rule_files:
+  - alerts.yml
+evaluation_interval: 15s
+
+tests:
+  - name: the API stops answering
+    interval: 15s
+    input_series:
+      - series: 'up{job="api",instance="api:8000"}'
+        values: "1 1 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 30s
+        alertname: ApiDown
+        exp_alerts: []                       # down, but not for 30 s yet
+      - eval_time: 105s
+        alertname: ApiDown
+        exp_alerts:
+          - exp_labels: { severity: critical, job: api, instance: "api:8000" }
+            exp_annotations:
+              summary: The API is not answering Prometheus scrapes
+              description: No API instance has answered a scrape for 30 seconds. Check the pods and /readyz.
+
+  - name: a healthy API raises nothing
+    interval: 15s
+    input_series:
+      - series: 'up{job="api",instance="api:8000"}'
+        values: "1 1 1 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 105s
+        alertname: ApiDown
+        exp_alerts: []
+
+  - name: a job lands in the dead-letter list
+    interval: 1m
+    input_series:
+      - series: 'datadigest_queue_jobs{state="dead"}'
+        values: "0 0 1 1 1 1 1"
+    alert_rule_test:
+      - eval_time: 1m
+        alertname: DeadLetterJobs
+        exp_alerts: []
+      - eval_time: 5m
+        alertname: DeadLetterJobs
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: Jobs ended in the dead-letter list
+              description: Some jobs failed every retry and their datasets or runs were marked failed. See the worker logs.
+
+  - name: the queue backs up
+    interval: 1m
+    input_series:
+      - series: 'datadigest_queue_jobs{state="pending"}'
+        values: "0 80 80 80 80 80 80 80 80"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: QueueBacklog
+        exp_alerts: []                       # over the limit, but not for 5 minutes yet
+      - eval_time: 8m
+        alertname: QueueBacklog
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: More than 50 jobs have been waiting for 5 minutes
+              description: Workers are not keeping up. Scale the worker Deployment or check the HPA.
+
+  - name: a short burst does not raise a backlog alert
+    interval: 1m
+    input_series:
+      - series: 'datadigest_queue_jobs{state="pending"}'
+        values: "0 80 80 0 0 0 0 0 0"
+    alert_rule_test:
+      - eval_time: 8m
+        alertname: QueueBacklog
+        exp_alerts: []
+
+  - name: a handler crashes
+    interval: 1m
+    input_series:
+      - series: 'datadigest_job_crashes_total{instance="w1"}'
+        values: "0 0 0 1 1 1"
+    alert_rule_test:
+      - eval_time: 4m
+        alertname: WorkerCrashes
+        exp_alerts:
+          - exp_labels: { severity: warning }
+            exp_annotations:
+              summary: A job handler crashed in the last 10 minutes
+              description: The job will be retried, but a crash means a bug or a poison input. See the worker logs.
+
+  - name: most requests fail with 5xx
+    interval: 1m
+    input_series:
+      - series: 'datadigest_http_requests_total{status="200"}'
+        values: "0+10x12"
+      - series: 'datadigest_http_requests_total{status="500"}'
+        values: "0+5x12"
+    alert_rule_test:
+      - eval_time: 10m
+        alertname: ApiServerErrors
+        exp_alerts:
+          - exp_labels: { severity: critical }
+            exp_annotations:
+              summary: More than 5% of API requests fail with a 5xx error
+              description: Check the API logs and /readyz.

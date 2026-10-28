@@ -1,0 +1,48 @@
+# A backup that was never restored is a hope, not a backup. This Job restores the newest dump
+# into a scratch database next to the real one, counts what came back, and drops the copy.
+# It never touches the live "datadigest" database. Run it on demand (not part of kustomize):
+#
+#   kubectl -n datadigest delete job restore-check --ignore-not-found
+#   kubectl -n datadigest apply -f k8s/ops/restore-check-job.yaml
+#   kubectl -n datadigest wait --for=condition=complete job/restore-check --timeout=120s
+#   kubectl -n datadigest logs job/restore-check
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: restore-check
+spec:
+  backoffLimit: 0
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: restore
+          image: postgres:17-alpine
+          env:
+            - { name: PGHOST, value: postgres }
+            - { name: PGUSER, value: datadigest }
+            - name: PGPASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: datadigest-secret
+                  key: POSTGRES_PASSWORD
+          command: ["sh", "-ec"]
+          args:
+            - |
+              latest=$(ls -1t /backups/datadigest-*.dump | head -1)
+              echo "restoring $latest into the scratch database restore_check"
+              dropdb --if-exists restore_check
+              createdb restore_check
+              pg_restore --no-owner --dbname=restore_check "$latest"
+              echo "datasets in the restored copy: $(psql -At -d restore_check -c 'select count(*) from datasets')"
+              echo "optimization runs in the restored copy: $(psql -At -d restore_check -c 'select count(*) from optimizations')"
+              dropdb restore_check
+              echo "restore check passed"
+          volumeMounts:
+            - name: backups
+              mountPath: /backups
+              readOnly: true
+      volumes:
+        - name: backups
+          persistentVolumeClaim:
+            claimName: postgres-backups

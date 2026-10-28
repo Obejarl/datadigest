@@ -24,6 +24,10 @@ services:
 
   redis:
     image: redis:7-alpine
+    # Append-only persistence: queued and in-flight jobs survive a Redis restart.
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - redisdata:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 3s
@@ -69,6 +73,7 @@ services:
     profiles: ["monitoring"]
     volumes:
       - ./deploy/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./deploy/prometheus/alerts.yml:/etc/prometheus/alerts.yml:ro
     ports:
       - "127.0.0.1:9090:9090"
     depends_on: [api, worker]
@@ -90,3 +95,4 @@ services:
 
 volumes:
   pgdata:
+  redisdata:

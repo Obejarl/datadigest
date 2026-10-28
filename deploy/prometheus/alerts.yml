@@ -1,0 +1,75 @@
+# Alerting rules. Prometheus evaluates them and shows firing alerts on :9090/alerts; hook up
+# Alertmanager to get notified. Tested with `promtool test rules` (alerts_test.yml) in CI.
+groups:
+  - name: datadigest
+    rules:
+      - alert: ApiDown
+        expr: up{job="api"} == 0
+        for: 30s
+        labels: { severity: critical }
+        annotations:
+          summary: The API is not answering Prometheus scrapes
+          description: No API instance has answered a scrape for 30 seconds. Check the pods and /readyz.
+
+      - alert: WorkerDown
+        expr: up{job="worker"} == 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: A worker is not answering Prometheus scrapes
+          description: A worker instance has been down for a minute. Queued jobs wait until one is back.
+
+      - alert: DeadLetterJobs
+        expr: sum(datadigest_queue_jobs{state="dead"}) > 0
+        for: 1m
+        labels: { severity: critical }
+        annotations:
+          summary: Jobs ended in the dead-letter list
+          description: Some jobs failed every retry and their datasets or runs were marked failed. See the worker logs.
+
+      - alert: QueueBacklog
+        expr: sum(datadigest_queue_jobs{state="pending"}) > 50
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: More than 50 jobs have been waiting for 5 minutes
+          description: Workers are not keeping up. Scale the worker Deployment or check the HPA.
+
+      - alert: JobsStuckInFlight
+        expr: sum(datadigest_queue_jobs{state="in_flight"}) > 0
+        for: 15m
+        labels: { severity: warning }
+        annotations:
+          summary: Jobs have been in flight for 15 minutes
+          description: A job taken by a worker should finish quickly. A worker may have hung or died.
+
+      - alert: WorkerCrashes
+        expr: sum(increase(datadigest_job_crashes_total[10m])) > 0
+        labels: { severity: warning }
+        annotations:
+          summary: A job handler crashed in the last 10 minutes
+          description: The job will be retried, but a crash means a bug or a poison input. See the worker logs.
+
+      - alert: HighJobQueueWait
+        expr: histogram_quantile(0.95, sum by (le) (rate(datadigest_job_queue_wait_seconds_bucket[5m]))) > 30
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: 95% of jobs wait more than 30 seconds for a worker
+          description: Capacity is too low for the load. Compare with the /capacity page.
+
+      - alert: HighApiLatency
+        expr: histogram_quantile(0.95, sum by (le) (rate(datadigest_http_request_duration_seconds_bucket[5m]))) > 1
+        for: 5m
+        labels: { severity: warning }
+        annotations:
+          summary: 95% of API requests take longer than 1 second
+          description: Check database latency and the API pod resources.
+
+      - alert: ApiServerErrors
+        expr: sum(rate(datadigest_http_requests_total{status=~"5.."}[5m])) / sum(rate(datadigest_http_requests_total[5m])) > 0.05
+        for: 5m
+        labels: { severity: critical }
+        annotations:
+          summary: More than 5% of API requests fail with a 5xx error
+          description: Check the API logs and /readyz.

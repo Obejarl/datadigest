@@ -16,6 +16,7 @@ resources:
   - worker.yaml
   - worker-hpa.yaml
   - cleanup-cronjob.yaml
+  - postgres-backup.yaml
 # ingress.yaml is optional: it needs an ingress controller (see README).
 images:
   - name: datadigest

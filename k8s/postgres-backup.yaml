@@ -1,0 +1,58 @@
+# Nightly logical backup of the database to its own volume, keeping the last KEEP_DAYS days.
+# Each backup is verified (pg_restore --list must read it) before old ones are deleted.
+# Restore procedure: README "Backups", and k8s/ops/restore-check-job.yaml proves a dump restores.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-backups
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: postgres-backup
+spec:
+  schedule: "0 2 * * *"
+  concurrencyPolicy: Forbid
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 2
+      template:
+        spec:
+          restartPolicy: OnFailure
+          containers:
+            - name: backup
+              image: postgres:17-alpine
+              env:
+                - { name: PGHOST, value: postgres }
+                - { name: PGUSER, value: datadigest }
+                - { name: PGDATABASE, value: datadigest }
+                - name: PGPASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: datadigest-secret
+                      key: POSTGRES_PASSWORD
+                - { name: KEEP_DAYS, value: "7" }
+              command: ["sh", "-ec"]
+              args:
+                - |
+                  file=/backups/datadigest-$(date -u +%Y%m%d-%H%M%S).dump
+                  pg_dump --format=custom --file="$file"
+                  pg_restore --list "$file" > /dev/null   # fails if the dump cannot be read back
+                  find /backups -name 'datadigest-*.dump' -mtime +"$KEEP_DAYS" -delete
+                  echo "backup written:"; ls -lh /backups
+              resources:
+                requests: { cpu: 50m, memory: 64Mi }
+              volumeMounts:
+                - name: backups
+                  mountPath: /backups
+          volumes:
+            - name: backups
+              persistentVolumeClaim:
+                claimName: postgres-backups
