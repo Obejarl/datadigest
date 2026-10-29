@@ -231,6 +231,10 @@ td .num { font-family: var(--mono); }
   content: ""; position: absolute; left: 14px; right: 14px; bottom: -1px; height: 2px; border-radius: 2px;
   background: linear-gradient(90deg, var(--cyan), var(--violet)); box-shadow: 0 0 12px rgba(34, 211, 238, 0.75);
 }
+/* Scrollbars */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.22); border-radius: 8px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: rgba(34, 211, 238, 0.4); background-clip: padding-box; }
 .tab kbd { font: 11px var(--mono); color: var(--dim); border: 1px solid #334155; border-radius: 5px; padding: 0 5px; }
 .tab .count { background: rgba(34, 211, 238, 0.16); color: var(--cyan); border-radius: 999px; font-size: 11.5px; padding: 0 7px; }
 .pane { display: none; }
@@ -503,3 +507,165 @@ table.stat td:first-child { font-family: var(--font); font-weight: 600; color: v
 .tag.bad { color: #ff6b81; border-color: rgba(255, 77, 109, 0.45); background: rgba(255, 77, 109, 0.08); }
 .fine { font-size: 12.5px; margin: 12px 0 0; }
 .notes { margin: 8px 0 0; padding-left: 18px; color: var(--sub); font-size: 12.5px; line-height: 1.6; }
+
+/* ── v0.8: polish — motion, depth, feedback ───────────────────────────────
+   Everything below is progressive: no layout depends on it, and the
+   prefers-reduced-motion rule above switches all of it off. */
+
+::selection { background: rgba(34, 211, 238, 0.28); color: #fff; }
+html { scrollbar-color: rgba(148, 163, 184, 0.28) transparent; scrollbar-width: thin; }
+
+/* Page-to-page transitions (Chromium); the top bar stays put while the content cross-fades. */
+@view-transition { navigation: auto; }
+.topbar { view-transition-name: topbar; }
+::view-transition-old(root), ::view-transition-new(root) { animation-duration: 0.22s; animation-timing-function: var(--ease); }
+
+/* A slow aurora behind everything: transform-only, so it costs no repaint. */
+body::before { inset: -12%; animation: aurora 38s ease-in-out infinite alternate; will-change: transform; }
+@keyframes aurora {
+  0% { transform: translate3d(0, 0, 0) scale(1); }
+  50% { transform: translate3d(2.5%, 1.5%, 0) scale(1.06); }
+  100% { transform: translate3d(-2%, 2.5%, 0) scale(1.03); }
+}
+
+/* Top bar: gains depth once the page scrolls; a thin bar shows requests in flight. */
+.topbar { transition: background 0.3s, box-shadow 0.3s; }
+.topbar.scrolled { background: linear-gradient(180deg, rgba(7, 10, 18, 0.97), rgba(7, 10, 18, 0.9)); box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35); }
+.topbar::before {
+  content: ""; position: absolute; left: 0; top: 0; height: 2px; width: 100%; z-index: 2; opacity: 0; transform-origin: left;
+  background: linear-gradient(90deg, var(--cyan), var(--violet), var(--green)); transition: opacity 0.3s;
+}
+html.busy .topbar::before { opacity: 1; animation: busy 1.1s var(--ease) infinite; }
+@keyframes busy { 0% { transform: scaleX(0.02); } 60% { transform: scaleX(0.85); } 100% { transform: scaleX(1); opacity: 0; } }
+.nav a { position: relative; transition: color 0.2s, background 0.2s; }
+.nav a::after {
+  content: ""; position: absolute; left: 12px; right: 12px; bottom: 3px; height: 2px; border-radius: 2px; transform: scaleX(0);
+  background: linear-gradient(90deg, var(--cyan), var(--violet)); transition: transform 0.3s var(--ease);
+}
+.nav a:hover::after, .nav a.active::after { transform: scaleX(1); }
+
+/* Entrance: content rises in, one after another. `backwards` keeps hover transforms working afterwards. */
+@keyframes rise { from { opacity: 0; transform: translateY(14px); } }  /* no scale: Plotly measures its box while this runs */
+.phead, .crumbs, .drop, .promo, .samples, .tabs, .card, .tile, .kind-card, .col, .charts .chart, .issue {
+  animation: rise 0.55s var(--ease) backwards;
+}
+.phead { animation-delay: 0.02s; }
+.bento > :nth-child(1), .kinds > :nth-child(1), .cols > :nth-child(1) { animation-delay: 0.06s; }
+.bento > :nth-child(2), .kinds > :nth-child(2), .cols > :nth-child(2) { animation-delay: 0.11s; }
+.bento > :nth-child(3), .kinds > :nth-child(3), .cols > :nth-child(3) { animation-delay: 0.16s; }
+.bento > :nth-child(4), .kinds > :nth-child(4), .cols > :nth-child(4) { animation-delay: 0.21s; }
+.bento > :nth-child(n+5), .kinds > :nth-child(n+5), .cols > :nth-child(n+5) { animation-delay: 0.26s; }
+.drop { animation-delay: 0.24s; }
+.promo, .samples { animation-delay: 0.3s; }
+main > .card, main > section > .card { animation-delay: 0.34s; }
+.issue:nth-child(2) { animation-delay: 0.05s; }
+.issue:nth-child(3) { animation-delay: 0.1s; }
+.issue:nth-child(n+4) { animation-delay: 0.15s; }
+tbody tr { animation: fade 0.4s ease backwards; }
+tbody tr:nth-child(2) { animation-delay: 0.03s; }
+tbody tr:nth-child(3) { animation-delay: 0.06s; }
+tbody tr:nth-child(4) { animation-delay: 0.09s; }
+tbody tr:nth-child(5) { animation-delay: 0.12s; }
+tbody tr:nth-child(n+6) { animation-delay: 0.15s; }
+
+/* Cursor spotlight (fx.js sets --mx / --my on the hovered surface). */
+.card, .tile, .col, .kind-card, .promo, .drop { --mx: 50%; --my: 0%; }
+.card::before, .tile::before, .col::before, .kind-card::before, .promo::before, .drop::before {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 0.35s;
+  background: radial-gradient(420px circle at var(--mx) var(--my), rgba(34, 211, 238, 0.10), rgba(167, 139, 250, 0.05) 45%, transparent 70%);
+}
+.card, .col, .promo { position: relative; }
+.card:hover::before, .tile:hover::before, .col:hover::before, .kind-card:hover::before, .promo:hover::before, .drop:hover::before { opacity: 1; }
+.card:hover { border-color: rgba(148, 163, 184, 0.24); }
+.tile:hover { box-shadow: var(--shadow), 0 18px 44px rgba(34, 211, 238, 0.08); }
+.col:hover { box-shadow: var(--shadow), 0 16px 40px rgba(34, 211, 238, 0.06); }
+.tile .lbl svg { transition: transform 0.45s var(--ease), box-shadow 0.3s; }
+.tile:hover .lbl svg { transform: rotate(-8deg) scale(1.12); box-shadow: inset 0 0 0 1px var(--tc, var(--cyan)); }
+
+/* Buttons: press feedback and a light sweep across the primary action. */
+.btn { position: relative; overflow: hidden; }
+.btn:active { transform: translateY(0) scale(0.97); box-shadow: none; }
+.btn.primary::after {
+  content: ""; position: absolute; inset: 0; transform: translateX(-120%); pointer-events: none;
+  background: linear-gradient(110deg, transparent 30%, rgba(255, 255, 255, 0.45) 50%, transparent 70%);
+}
+.btn.primary:hover::after { transform: translateX(120%); transition: transform 0.7s var(--ease); }
+.btn.loading { opacity: 0.7; cursor: progress; pointer-events: none; }
+.btn.loading::before {
+  content: ""; width: 14px; height: 14px; border-radius: 50%; border: 2px solid currentColor; border-right-color: transparent; animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+.icon-btn:active { transform: scale(0.9); }
+.fchip, .seg-b, .sample { transition: border-color 0.2s, background 0.2s, color 0.2s, transform 0.2s var(--ease); }
+.fchip:active, .seg-b:active, .sample:active { transform: scale(0.96); }
+.sample:hover { transform: translateY(-2px); }
+
+/* Tabs: one ink bar slides between tabs (fx.js positions it); without JS the per-tab underline still shows. */
+.tabs { position: relative; }
+.tab { transition: color 0.2s, background 0.25s, transform 0.2s var(--ease); }
+.tab-ink {
+  position: absolute; bottom: 0; left: 0; height: 2px; width: 0; border-radius: 2px; pointer-events: none;
+  background: linear-gradient(90deg, var(--cyan), var(--violet)); box-shadow: 0 0 12px rgba(34, 211, 238, 0.75);
+  transition: transform 0.4s var(--ease), width 0.4s var(--ease);
+}
+.tabs.inked .tab.active::after { display: none; }
+.tab:active { transform: scale(0.97); }
+.tab kbd { transition: color 0.2s, border-color 0.2s; }
+.tab.active kbd { color: var(--cyan); border-color: rgba(34, 211, 238, 0.45); }
+
+/* Drop zone: the icon floats, and a drag over it lifts the whole surface. */
+.drop .ico { transition: transform 0.4s var(--ease), box-shadow 0.3s; }
+.drop:hover .ico { transform: translateY(-3px) rotate(-4deg); box-shadow: inset 0 0 0 1px rgba(34, 211, 238, 0.5), 0 10px 26px rgba(34, 211, 238, 0.25); }
+.drop { transition: border-color 0.25s, background 0.25s, box-shadow 0.25s, transform 0.3s var(--ease); }
+.drop.over { transform: scale(1.01); }
+
+/* Inputs, pills, badges, progress. */
+.search, .field input { transition: border-color 0.2s, box-shadow 0.2s, background 0.2s; }
+.search:focus { background: rgba(255, 255, 255, 0.07); }
+.pill { transition: border-color 0.2s, color 0.2s; }
+.pill:hover { color: var(--txt); border-color: rgba(34, 211, 238, 0.4); }
+.progress b { position: relative; overflow: hidden; }
+.progress b::after {
+  content: ""; position: absolute; inset: 0;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.5), transparent); transform: translateX(-100%); animation: sweep 1.2s linear infinite;
+}
+@keyframes sweep { to { transform: translateX(100%); } }
+.chip { transition: border-color 0.2s, background 0.2s; }
+.chip:hover { border-color: rgba(34, 211, 238, 0.4); }
+.chip.eng-spark { color: #ffb86b; border-color: rgba(255, 140, 40, 0.45); background: rgba(255, 140, 40, 0.1); }
+
+/* Stepper: finished steps pop in, finished connectors carry a light sweep. */
+.step .dot { transition: border-color 0.3s, background 0.3s, color 0.3s; }
+.step.done .dot { animation: pop 0.45s var(--ease); }
+@keyframes pop { 0% { transform: scale(0.6); } 60% { transform: scale(1.18); } 100% { transform: scale(1); } }
+.step-line { position: relative; overflow: hidden; }
+.step-line.done::after { content: ""; position: absolute; inset: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.6), transparent); transform: translateX(-100%); animation: sweep 1.8s linear infinite; }
+
+/* Toasts slide out, with a timer bar showing how long they stay. */
+.toast { position: relative; overflow: hidden; }
+.toast::after { content: ""; position: absolute; left: 0; bottom: 0; height: 2px; width: 100%; background: var(--c, var(--cyan)); transform-origin: left; animation: timer 4.5s linear forwards; }
+@keyframes timer { to { transform: scaleX(0); } }
+.toast.out { animation: toast-out 0.28s var(--ease) forwards; }
+@keyframes toast-out { to { opacity: 0; transform: translateX(24px); } }
+
+/* Dialog: the backdrop fades and the panel scales in. */
+.modal[open] { animation: modal-in 0.28s var(--ease); }
+@keyframes modal-in { from { opacity: 0; transform: translateY(14px) scale(0.96); } }
+.modal[open]::backdrop { animation: fade-bd 0.28s ease; }
+@keyframes fade-bd { from { opacity: 0; } }
+
+/* Tables: a left accent on the hovered row. */
+tbody tr:hover td:first-child { box-shadow: inset 3px 0 0 var(--cyan); }
+td.name a { transition: color 0.2s; }
+td.name a:hover { color: var(--cyan); text-decoration: none; }
+
+/* The pending card shows a live dot next to its title. */
+#pending .card-t::after { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--cyan); animation: pulse-c 1.6s infinite; }
+
+@media (max-width: 760px) {
+  .tile:hover, .col:hover, .kind-card:hover, .promo:hover { transform: none; }
+  body::before { animation: none; }
+}
+@media (hover: none) {
+  .card::before, .tile::before, .col::before, .kind-card::before, .promo::before, .drop::before { display: none; }
+}

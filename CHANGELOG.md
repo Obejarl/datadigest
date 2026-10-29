@@ -3,6 +3,19 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (0.x: the API may still change between minors).
 
+## [Unreleased]
+
+### Changed
+- **Interface polish.** Staggered entrance animations, animated page changes (cross-document
+  view transitions), a sliding tab indicator, a cursor spotlight on cards, press feedback and a
+  light sweep on buttons, tiles that count up to their numbers, toasts with a timer bar that
+  slide out, a top progress bar while requests are in flight, and a slow aurora behind the page.
+  Spark-profiled datasets get an orange engine chip. All motion respects
+  `prefers-reduced-motion`; effects live in `fx.js` and the end of `style.css`, and no layout
+  depends on them.
+- README screenshots show the new interface and the Statistics tab.
+- The sign-in redirect test waits for the redirect itself instead of for network idle.
+
 ## [0.7.0] - 2026-10-29
 
 ### Added

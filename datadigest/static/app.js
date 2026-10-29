@@ -98,7 +98,7 @@ function toast(message, color = COLORS.cyan) {
   const box = el("div", { class: "toast", text: message, role: "status" });
   box.style.setProperty("--c", color);
   document.getElementById("toasts").append(box);
-  setTimeout(() => box.remove(), 4500);
+  setTimeout(() => { box.classList.add("out"); setTimeout(() => box.remove(), 300); }, 4500);
 }
 
 /** A styled replacement for window.confirm(). Resolves to true when confirmed. */
@@ -928,7 +928,7 @@ async function loadDataset(id, mode) {
   document.getElementById("chips").append(
     el("span", { class: "chip", text: s.encoding }),
     el("span", { class: "chip", text: `sep ${s.delimiter === "\t" ? "TAB" : s.delimiter}` }),
-    el("span", { class: "chip", text: `engine ${s.engine || "pandas"}` }));
+    el("span", { class: s.engine === "spark" ? "chip eng-spark" : "chip", text: s.engine === "spark" ? "⚡ engine spark" : `engine ${s.engine || "pandas"}` }));
 
   document.getElementById("result").hidden = false;  // before charts: they measure their containers
   renderTiles(profile, dataset);

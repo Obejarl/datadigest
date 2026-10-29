@@ -38,8 +38,7 @@ def test_the_next_parameter_cannot_send_you_to_another_site(page, secured_server
         page.goto(f"{secured_server}/login?next={hostile}")
         page.fill("#token", TOKEN)
         page.click("#login-submit")
-        page.wait_for_load_state("networkidle")
-        assert page.url.startswith(secured_server), f"left the site for next={hostile}: {page.url}"
+        page.wait_for_url(secured_server + "/")  # the unsafe target is ignored: home, not example.org
         assert "example.org" not in page.url
 
 

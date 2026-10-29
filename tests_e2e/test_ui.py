@@ -178,6 +178,24 @@ def test_statistics_tab_sections_and_phone_width(browser, server, sales_id):
     context.close()
 
 
+def test_tab_ink_follows_the_active_tab_and_effects_do_not_break_clicks(page, server, sales_id):
+    page.goto(f"{server}/datasets/{sales_id}")
+    expect(page.locator("#result")).to_be_visible()
+    for name in ("columns", "stats", "overview"):
+        page.locator(f".tab[data-tab='{name}']").click()
+        # the ink bar sits under the active tab, inset 14px on each side
+        page.wait_for_function(
+            """(name) => {
+                const tab = document.querySelector(`.tab[data-tab='${name}']`);
+                const ink = document.querySelector('.tab-ink');
+                return ink && ink.style.transform === `translateX(${tab.offsetLeft + 14}px)`
+                    && parseFloat(ink.style.width) === tab.offsetWidth - 28;
+            }""",
+            arg=name,
+        )
+    assert page.evaluate("document.querySelector('.tabs').classList.contains('inked')")
+
+
 def test_reprocess_button_runs_the_analysis_again(page, server, sales_id):
     before = get(server, f"/api/datasets/{sales_id}")["finished_at"]
     page.goto(f"{server}/datasets/{sales_id}")

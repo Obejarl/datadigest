@@ -9,6 +9,11 @@ distributions, correlations, warnings and a shareable HTML report. Then **optimi
 same data with operations research: production plans, shipping routes, team assignments
 and budgets, solved to the proven optimum and explained in plain words.
 
+Files too big for one process's memory are profiled by **Apache Spark (PySpark)** instead of
+pandas, with identical output, and a **Statistics tab** goes beyond description: variance,
+Kolmogorov-Smirnov distribution fits, chi-square, Goodman-Kruskal gamma, Somers' d, Cliff's
+delta, consistency degrees and sensitivity analyses.
+
 Built as a small but complete service: a REST API, a background worker behind a Redis
 queue, PostgreSQL, Docker Compose, Kubernetes manifests (with autoscaling and a CronJob)
 and CI that tests against real databases.
@@ -18,6 +23,8 @@ and CI that tests against real databases.
 ![Dataset overview](docs/dashboard.png)
 
 ![Column cards](docs/columns.png)
+
+![Statistics](docs/statistics.png)
 
 ## What it does
 
@@ -38,7 +45,9 @@ and CI that tests against real databases.
   drawn from the same Plotly specs. The dashboard has tabs for overview, column cards
   (filter by type, sort by missing or unique values), correlations and a preview of the
   first rows. Warnings link to their column. Tab links are shareable (`#columns`), and
-  the `1`-`4` keys switch tabs.
+  the `1`-`5` keys switch tabs. Motion is light and optional: a sliding tab indicator, a
+  cursor spotlight on cards, staggered entrances and animated page changes, all switched off
+  by `prefers-reduced-motion`.
 - **Goes beyond describing.** A Statistics tab (and report section) adds variance, CV, confidence
   intervals, normality tests and Kolmogorov-Smirnov distribution fits, five kinds of association
   tests, degrees of consistency, and sensitivity analyses (see [Statistics](#statistics)).
