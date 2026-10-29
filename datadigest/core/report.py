@@ -27,7 +27,26 @@ def _filesize(num: int) -> str:
     return f"{num:.1f} TB"
 
 
+def _number(value, digits: int = 3) -> str:
+    """Compact number for tables: thousands separators, no trailing zeros, scientific when tiny or huge."""
+    if value is None:
+        return "–"
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return str(value)
+    if value != 0 and (abs(value) >= 1e7 or abs(value) < 1e-3):
+        return f"{value:.2e}"
+    return f"{value:,.{digits}f}".rstrip("0").rstrip(".")
+
+
+def _pvalue(value) -> str:
+    if value is None:
+        return "–"
+    return "<0.001" if value < 0.001 else f"{value:.3f}"
+
+
 _env.filters["filesize"] = _filesize
+_env.filters["num"] = _number
+_env.filters["pval"] = _pvalue
 
 
 def render_report(profile: dict, title: str) -> str:

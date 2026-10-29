@@ -267,6 +267,19 @@ def _preview(df: pd.DataFrame) -> dict[str, Any]:
     return {"columns": [str(c) for c in head.columns], "rows": rows}
 
 
+def _stats_frame(df: pd.DataFrame, converted: dict[str, pd.Series], kinds: dict[str, str]) -> pd.DataFrame:
+    """The columns the advanced statistics work on: floats for numeric ones, strings for the rest."""
+    data = {}
+    for name, series in converted.items():
+        kind = kinds[name]
+        if kind == "numeric":
+            data[name] = series.astype(float)
+        elif kind in ("categorical", "boolean", "text"):
+            text = series.astype("string")
+            data[name] = text.astype(object).where(text.notna(), np.nan)
+    return pd.DataFrame(data, index=df.index)
+
+
 def build_profile(table: LoadedTable) -> dict[str, Any]:
     df = table.df
     rows = len(df)
@@ -286,6 +299,18 @@ def build_profile(table: LoadedTable) -> dict[str, Any]:
 
     missing_pct = _pct(missing_cells, rows * len(columns))
     warnings = _warnings(columns, correlations, duplicates, rows)
+    from datadigest.core.stats import build_advanced, sample_frame  # stats imports this module's helpers
+
+    kind_of = {c["name"]: c["kind"] for c in columns}
+    frame, sampled = sample_frame(_stats_frame(df, converted, kind_of), rows)
+    validity = {
+        name: float(converted[name].notna().sum() / df[name].notna().sum())
+        for name in df.columns
+        if df[name].notna().any()
+    }
+    advanced = build_advanced(
+        frame, df.loc[frame.index], kind_of, columns, total_rows=rows, validity=validity, sampled=sampled
+    )
     return {
         "summary": {
             "rows": rows,
@@ -304,5 +329,6 @@ def build_profile(table: LoadedTable) -> dict[str, Any]:
         "columns": columns,
         "correlations": correlations,
         "warnings": warnings,
+        "advanced": advanced,
         "preview": _preview(df),
     }

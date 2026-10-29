@@ -422,7 +422,47 @@ Yükleme sınırı 10 MB, çünkü dosya veritabanında saklanıyor. Büyük dos
 
 ---
 
-## 14. Bu projede yakalanan hatalar ve öğrettikleri
+## 14. İstatistik göstergeleri: ne ölçüyorlar, ne zaman yanıltırlar
+
+Bütün hesaplar [`stats.py`](../datadigest/core/stats.py) içinde. Önce bir ilke: **p-değeri "etki var mı"yı, etki büyüklüğü "ne kadar"ı söyler.** 50 bin satırda neredeyse her fark "anlamlı" çıkar; bu yüzden her testin yanında bir etki büyüklüğü var.
+
+### Dağılım ve merkezi eğilim
+| Gösterge | Anlamı | Dikkat |
+|---|---|---|
+| **Varyans / standart sapma** | Değerlerin ortalamadan ortalama uzaklığı (karesi / kökü). | Aykırı değere çok duyarlı. |
+| **Değişim katsayısı (CV)** | std / ortalama: birimden bağımsız yayılım; farklı ölçekteki kolonları karşılaştırır. | Ortalama 0'a yakınsa patlar. |
+| **MAD, IQR, kırpılmış ortalama** | Aykırı değere dayanıklı yayılım ve merkez ölçüleri. | Ortalama ile medyan arası açılıyorsa dağılım çarpık demektir. |
+| **Çarpıklık, basıklık** | Simetriden sapma; kuyrukların ağırlığı (0 = normal). | Küçük örneklemde oynak. |
+| **Güven aralığı** | Ortalamanın %95 aralığı: t dağılımıyla ortalama ± t·(std/√n). | Verinin kendisi için değil, ortalama için. |
+
+### Normallik ve dağılım tespiti
+- **Shapiro-Wilk, D'Agostino K², Jarque-Bera**: üçü de "normal" hipotezini sınar. Tek test büyük örneklemde en küçük sapmaya bile "reddet" der; bu yüzden **testlerin çoğu aynı fikirdeyse** "normal değil" diyorum.
+- **Kolmogorov-Smirnov (KS)**: veriyle bir kuramsal dağılım (normal, log-normal, üstel, düzgün, gamma, Weibull) arasındaki **en büyük dikey uzaklık D**. Her aday en çok olabilirlik ile uydurulur ve D'ye göre sıralanır. **Tuzak:** parametreleri aynı veriden tahmin ettiğim için p-değeri iyimser olur (Lilliefors sorunu), o yüzden sıralama D ile yapılır, p-değeri yalnızca uyarıdır.
+
+### İlişki ölçüleri: hangi veri türü için hangisi?
+| Veri | Ölçü | Notlar |
+|---|---|---|
+| sayısal × sayısal | **Pearson** (doğrusal), **Spearman / Kendall** (sıra tabanlı) | İkisi birbirinden çok farklıysa ilişki eğri ya da birkaç uç noktadan çıkıyordur. |
+| kategorik × kategorik | **Ki-kare bağımsızlık testi**, **Cramér V** (0-1 etki büyüklüğü) | Beklenen sayılar 5'ten küçükse ki-kare güvenilmez; uyarı veriyorum. V, küçük örneklemde şişer; Bergsma düzeltmesini kullandım. |
+| sıralı × sıralı (puan, derece) | **Goodman-Kruskal gamma**, Kendall τ-b, **Somers' d** | Gamma eşitlikleri (ties) yok sayar, kaba ölçeklerde uygundur. **Somers' d asimetriktir**: "A'dan B'yi tahmin" ile "B'den A'yı tahmin" farklıdır. |
+| sayısal × grup | **ANOVA** (ortalamalar), **Kruskal-Wallis** (sıralar), **Levene** (varyans eşitliği), **η²** | İki grupta ayrıca **Cohen d / Hedges g** (ortalama farkı, std cinsinden) ve **Cliff delta** (P(x>y) − P(x<y), sıra tabanlı, aykırıya dayanıklı). |
+
+**Çoklu test sorunu:** 100 test yaparsanız, hiçbir gerçek etki olmasa bile ~5'i p<0.05 çıkar. **Benjamini-Hochberg** yöntemi yanlış keşif oranını (FDR) kontrol eder; tablolarda `p_adj` bu düzeltilmiş değerdir.
+
+### Tutarlılık dereceleri
+- **Tamlık** (boş olmayan oran), **geçerlilik** (değerin kolonun türü olarak okunabilmesi), **biçim tutarlılığı** (en yaygın karakter deseninin payı: `9999-99-99`), **etiket varyantları** (`İstanbul` / `istanbul `), **çakışan anahtarlar** (aynı ID, farklı satır içeriği).
+- **Cronbach alfa**: bir ölçeğin maddelerinin aynı şeyi ölçüp ölçmediği (iç tutarlılık). α = k/(k−1) · (1 − Σvaryans / toplamın varyansı). ≥0.7 kabul edilebilir, ≥0.9 mükemmel. **Yalnızca aynı yapıyı ölçen sütunlar için anlamlıdır** (anket maddeleri); satış verisinde düşük çıkması hata değil, beklenen sonuçtur.
+
+### Duyarlılık (sensitivity) analizleri
+- Aykırı değerler çıkarılınca ortalama/medyan/std **yüzde kaç oynuyor**? %10'dan fazlaysa "sensitive".
+- **Bootstrap**: veriden yerine koyarak 300 kez yeniden örnek çekip istatistiği her seferinde hesaplarsınız; yüzdelik dilimleri güven aralığıdır. Dağılım varsayımı gerektirmez, medyan gibi formülü zor istatistikler için de çalışır.
+- **Kırılgan korelasyon**: uç satırlar atılınca r çok değişiyor ya da işaret değiştiriyorsa ilişki birkaç noktadan ibarettir.
+
+(Yöneylem araştırmasındaki duyarlılık analizi, yani kısıt sağ taraflarındaki değişimin gölge fiyatı ne kadar etkilediği, ayrı bir konu; yol haritasında.)
+
+---
+
+## 15. Bu projede yakalanan hatalar ve öğrettikleri
 
 Her biri testte ya da tarayıcıda ölçerek bulundu. Hepsi düzeltildi; çoğunun artık bir testi var.
 
@@ -441,6 +481,7 @@ Her biri testte ya da tarayıcıda ölçerek bulundu. Hepsi düzeltildi; çoğun
 | Grafikler 375 piksel testinde hiç çizilmedi | Grafikler görünür olunca çizilir (`IntersectionObserver`). Sayfanın sonuna tek hamlede atlayınca grafik hiç görünmeden geçilir. Gerçek kullanıcı kaydırır; test de kademeli kaydırmalı. |
 | Release notları boş çıkıyordu | `awk` içindeki regex kaçışları ortama göre farklı yorumlanıyor. Düz metin karşılaştıran `index()` ile kaçış gerekmedi. Betiğin boş çıktı verirse hata vermesi de eklendi. |
 | Reddedilen istekler metriklerde görünmüyordu | Starlette'te sonradan eklenen middleware **en dışta** çalışır. Kimlik doğrulama ve metrik sırası önemli: reddedilenleri de saymak için metrik, doğrulamanın dışında olmalı. |
+| Dashboard'da 'TONE zaten tanımlı' hatası, Optimize sayfası açılmadı | Klasik betikler tek bir global kapsamı paylaşır: `app.js` ve `optimize.js` ikisi de en üstte `const TONE` tanımladı. `node --check` her dosyayı ayrı sınadığı için bunu yakalamadı; tarayıcı testi yakaladı. Global adları öneklemek ya da modül kullanmak gerekir. |
 | Spark'ta boş değerler histogramın son kutusuna düşüyordu | `least(a, b)` null'ı **yok sayar**: `least(29, NULL)` = 29. Eksik değerli kolonlarda son kutu şişti. Eşdeğerlik testi pandas ile farkı hemen gösterdi. Çözüm: `when(x.isNotNull(), ...)`. |
 | Spark başlıkları kendiliğinden yeniden adlandırdı | `Name` ve `name` başlıkları Spark'ta büyük/küçük harf duyarsız eşleştiği için `Name0`, `Name1` oldu. pandas ikisini ayrı tutar. Başlığı veri olarak okuyup adları kendim aldım. |
 | Spark Türkçe Excel dosyasını açmadı | Spark 4'ün CSV okuyucusu `windows-1254`'ü kabul etmiyor. Dosyayı `ISO-8859-1` (her baytı bir karaktere eşler) olarak okuyup farklı olan birkaç harfi (İ, Ş, Ğ, ı, ş, ğ) çevirdim. |

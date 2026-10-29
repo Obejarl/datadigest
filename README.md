@@ -39,6 +39,9 @@ and CI that tests against real databases.
   (filter by type, sort by missing or unique values), correlations and a preview of the
   first rows. Warnings link to their column. Tab links are shareable (`#columns`), and
   the `1`-`4` keys switch tabs.
+- **Goes beyond describing.** A Statistics tab (and report section) adds variance, CV, confidence
+  intervals, normality tests and Kolmogorov-Smirnov distribution fits, five kinds of association
+  tests, degrees of consistency, and sensitivity analyses (see [Statistics](#statistics)).
 - **Scales past pandas.** Files that do not fit in one process's memory are profiled by
   [Apache Spark](https://spark.apache.org/) instead, with the same output (see
   [Big files with Spark](#big-files-with-spark)).
@@ -83,6 +86,29 @@ enter a scenario (shareable as a link). It reports:
 - the cost-optimal count (worker cost against waiting cost);
 - the count needed at peak load;
 - ready-to-paste `minReplicas`/`maxReplicas` for the worker HPA.
+
+## Statistics
+
+Every profile also carries an `advanced` section ([`stats.py`](datadigest/core/stats.py)), shown on the
+dashboard's **Statistics** tab (key `5`) and in the HTML report. It is computed on at most 50,000 rows
+(a seeded random sample for bigger files; the tab says so), by both the pandas and the Spark engine.
+
+| Section | What it gives you |
+|---|---|
+| **Distributions** | Mean, median, mode, **variance**, standard deviation, **coefficient of variation**, standard error and 95% CI of the mean, skewness, excess kurtosis, percentiles (1/5/95/99), IQR, **MAD**, trimmed mean; **Shapiro-Wilk, D'Agostino and Jarque-Bera** normality tests (rejected only when they agree); **Kolmogorov-Smirnov fits** against normal, log-normal, exponential, uniform, gamma and Weibull with the closest one named |
+| **Numeric associations** | Pearson, Spearman and Kendall for column pairs, a hint when they disagree (non-linear or driven by outliers) |
+| **Categorical associations** | **Chi-square test of independence**, bias-corrected **Cramér's V**, contingency coefficient, and a warning when expected counts are too small for the test |
+| **Ordinal associations** | **Goodman-Kruskal gamma**, Kendall tau-b and **Somers' d** (both directions) for rating-like columns and quintile-cut continuous ones |
+| **Numeric by group** | One-way **ANOVA**, **Kruskal-Wallis**, Levene/Brown-Forsythe variance test and **eta squared**; for two groups also Welch t, Mann-Whitney U, **Cohen's d, Hedges' g and Cliff's delta** |
+| **Consistency** | Per column completeness, validity (parses as its type), uniqueness, format consistency (dominant character pattern), label variants (`Istanbul` / `istanbul `), conflicting duplicate keys, an overall degree with a grade, and **Cronbach's alpha** with item-total correlations |
+| **Sensitivity** | How the mean, median and standard deviation move when IQR outliers are dropped, winsorized and trimmed means, **bootstrap confidence intervals** (300 resamples), and which correlations change a lot or flip sign without the extreme rows |
+
+Two guard rails are built in. Dozens of tests run at once, so every p-value comes with a
+**Benjamini-Hochberg adjusted** value (`p_adj`). With many rows almost any difference is "significant", so
+each test is paired with an effect size (V, eta squared, d, delta, gamma) and a plain-word label. Identifier
+columns (unique integers) are left out of the association tests, and the Kolmogorov-Smirnov p-values are
+labelled optimistic because the parameters are fitted on the same data. Tests are checked against
+independent calculations (brute-force Cliff's delta, a textbook FDR example, planted relationships).
 
 ## Big files with Spark
 
@@ -451,7 +477,7 @@ pushes them to `ghcr.io/obejarl/datadigest`, and creates the GitHub Release from
 ## Project layout
 
 ```
-datadigest/core/      pure profiling: loader, profile (pandas), spark_profile, engines, charts, report (no DB, no HTTP)
+datadigest/core/      pure profiling: loader, profile (pandas), spark_profile, stats, engines, charts, report (no DB, no HTTP)
 datadigest/optimize/  pure solvers: production, transport, assignment, knapsack, capacity (M/M/c)
 datadigest/api/       FastAPI routes, schemas, dependencies
 datadigest/static/    dashboard (plain HTML/CSS/JS + plotly.js)

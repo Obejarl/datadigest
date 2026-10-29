@@ -484,3 +484,22 @@ pre.code { margin: 0; padding: 14px 16px; border-radius: 11px; background: #0a0f
 .login .field input:focus { outline: none; border-color: rgba(34, 211, 238, 0.55); box-shadow: 0 0 0 3px rgba(34, 211, 238, 0.12); }
 button.signout { cursor: pointer; font: inherit; font-size: 12px; font-weight: 600; }
 button.signout:hover { color: var(--txt); border-color: rgba(34, 211, 238, 0.5); }
+
+/* ── v0.7: statistics tab ── */
+.seg { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 0 0 16px; }
+.seg-b {
+  padding: 7px 14px; border-radius: 999px; cursor: pointer; border: 1px solid var(--edge); background: rgba(255, 255, 255, 0.035);
+  color: var(--sub); font: 600 13px var(--font); transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.seg-b:hover { color: var(--txt); border-color: rgba(34, 211, 238, 0.4); }
+.seg-b.active { color: var(--txt); background: rgba(34, 211, 238, 0.12); border-color: rgba(34, 211, 238, 0.55); }
+.stats-section > .card { margin-bottom: 18px; }
+.stat-wrap { max-height: 480px; overflow: auto; }
+table.stat td, table.stat th { white-space: nowrap; }
+table.stat td:first-child { font-family: var(--font); font-weight: 600; color: var(--txt); }
+.tag { display: inline-block; font: 600 11.5px var(--mono); padding: 1px 8px; border-radius: 999px; border: 1px solid var(--edge); color: var(--sub); }
+.tag.good { color: var(--green); border-color: rgba(16, 227, 154, 0.4); background: rgba(16, 227, 154, 0.08); }
+.tag.warn { color: var(--amber); border-color: rgba(255, 200, 87, 0.4); background: rgba(255, 200, 87, 0.08); }
+.tag.bad { color: #ff6b81; border-color: rgba(255, 77, 109, 0.45); background: rgba(255, 77, 109, 0.08); }
+.fine { font-size: 12.5px; margin: 12px 0 0; }
+.notes { margin: 8px 0 0; padding-left: 18px; color: var(--sub); font-size: 12.5px; line-height: 1.6; }

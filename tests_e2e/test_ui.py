@@ -159,6 +159,25 @@ def test_phone_width_dataset_and_result_pages(browser, server, sales_id, product
     context.close()
 
 
+def test_statistics_tab_sections_and_phone_width(browser, server, sales_id):
+    context = browser.new_context(viewport={"width": 375, "height": 812})
+    page = context.new_page()
+    page.goto(f"{server}/datasets/{sales_id}#stats")
+    expect(page.locator("#pane-stats")).to_have_class("pane active")
+    for section, card in [
+        ("Distributions", "Kolmogorov–Smirnov distribution fit"),
+        ("Associations", "Categorical pairs"),
+        ("Consistency", "Degree of consistency"),
+        ("Sensitivity", "How much do outliers move the statistics?"),
+    ]:
+        page.locator(".seg-b", has_text=section).click()
+        expect(page.locator(".stats-section:not([hidden]) .card-t", has_text=card)).to_be_visible()
+        expect(page.locator(".stats-section:not([hidden]) tbody tr").first).to_be_visible()
+        widths = page.evaluate("[document.documentElement.scrollWidth, innerWidth]")
+        assert widths[0] <= widths[1], f"{section} scrolls sideways: {widths}"
+    context.close()
+
+
 def test_reprocess_button_runs_the_analysis_again(page, server, sales_id):
     before = get(server, f"/api/datasets/{sales_id}")["finished_at"]
     page.goto(f"{server}/datasets/{sales_id}")

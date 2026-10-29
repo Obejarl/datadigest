@@ -30,6 +30,7 @@ import numpy as np
 
 from datadigest.config import Settings, get_settings
 from datadigest.core import profile as shared
+from datadigest.core import stats as advanced
 from datadigest.core.loader import _DECIMAL_COMMA, LoadError, decode, detect_delimiter
 
 SAMPLE_BYTES = 256 * 1024
@@ -78,6 +79,7 @@ def _cp1254_fixes() -> dict[str, str]:
 
 CP1254_FIXES = _cp1254_fixes()
 PARQUET_SUFFIX = ".parquet"
+ROW_ID = "__row"  # file order, so a sample can be handed to the statistics in the order pandas would see it
 
 
 def spark_available() -> bool:
@@ -202,7 +204,8 @@ def _read(spark, path: Path):
         *[
             F.when(v.isin(NA_TOKENS), F.lit(None)).otherwise(v).alias(c)
             for v, c in zip(values, internal, strict=True)
-        ]
+        ],
+        F.monotonically_increasing_id().alias(ROW_ID),
     )
     return cleaned, internal, names, encoding, delimiter
 
@@ -526,35 +529,57 @@ def _preview(df, names: list[str], columns: list[str]) -> dict[str, Any]:
     return {"columns": names, "rows": rows}
 
 
-def build_profile_spark(path: Path, settings: Settings | None = None) -> dict[str, Any]:
-    """Profile the file at ``path`` (CSV, TSV, TXT or Parquet) with Spark."""
-    spark = get_session(settings)
-    cleaned, columns, names, encoding, delimiter = _read(spark, Path(path))
-    display = dict(zip(columns, names, strict=True))
-    cleaned = cleaned.persist()  # every scan below re-reads it; parse the file once
-    try:
-        rows, stats = _first_pass(cleaned, columns, delimiter)
-        if rows == 0:
-            raise LoadError("File has no data rows")
-        _date_formats(cleaned, columns, stats)
-        kinds = [_kind(s) for s in stats]
-        typed = cleaned.select(*_typed(columns, stats, kinds))
+def _advanced(cleaned, columns, display, stats, kinds, profile_columns, datetimes, rows) -> dict[str, Any]:
+    """Collect at most MAX_ROWS rows (all of a small file, in file order) and run the shared statistics."""
+    import numpy as np
+    import pandas as pd
+    from pyspark.sql import functions as F
 
-        by_kind = {k: [c for c, kind in zip(columns, kinds, strict=True) if kind == k] for k in set(kinds)}
-        numeric = _numeric_stats(typed, by_kind.get("numeric", []), rows)
-        _outliers_and_histograms(typed, numeric)
-        non_null = {c: s["nn"] for c, s in zip(columns, stats, strict=True)}
-        categorical = _top_values(
-            typed, by_kind.get("categorical", []) + by_kind.get("boolean", []), non_null
-        )
-        datetimes = _datetime_stats(typed, by_kind.get("datetime", []))
-        texts = _text_stats(typed, by_kind.get("text", []))
-        correlations = _correlations(typed, numeric, display)
-        duplicates = rows - typed.distinct().count()
-        preview = _preview(cleaned, names, columns)
-    finally:
-        cleaned.unpersist()
+    limit = advanced.MAX_ROWS
+    sampled = rows > limit
+    sample = cleaned
+    if sampled:
+        sample = sample.sample(False, min(1.0, limit * 1.1 / rows), seed=advanced.SEED)
+    sample = sample.orderBy(ROW_ID).limit(limit)
 
+    typed = _typed(columns, stats, kinds)
+    select = []
+    for i, kind in enumerate(kinds):
+        if kind in ("numeric", "categorical", "boolean", "text"):
+            select.append(typed[i].alias(f"t{i}"))
+        select.append(F.col(columns[i]).alias(f"r{i}"))
+    records = sample.select(*select).collect()
+
+    def series(values, numeric=False):
+        if numeric:
+            return pd.Series(values, dtype=float)
+        s = pd.Series(values, dtype=object)
+        return s.where(s.notna(), np.nan)
+
+    frame, raw = {}, {}
+    for i, c in enumerate(columns):
+        raw[display[c]] = series([r[f"r{i}"] for r in records])
+        if kinds[i] in ("numeric", "categorical", "boolean", "text"):
+            frame[display[c]] = series([r[f"t{i}"] for r in records], numeric=kinds[i] == "numeric")
+    validity = {
+        display[c]: (datetimes[c]["n"] / s["nn"] if kind == "datetime" else 1.0)
+        for c, s, kind in zip(columns, stats, kinds, strict=True)
+        if s["nn"]
+    }
+    return advanced.build_advanced(
+        pd.DataFrame(frame),
+        pd.DataFrame(raw),
+        {display[c]: kind for c, kind in zip(columns, kinds, strict=True)},
+        profile_columns,
+        total_rows=rows,
+        validity=validity,
+        sampled=sampled,
+    )
+
+
+def _columns(
+    columns, display, stats, kinds, numeric, categorical, datetimes, texts, rows
+) -> list[dict[str, Any]]:
     profile_columns = []
     for c, s, kind in zip(columns, stats, kinds, strict=True):
         missing, unique = rows - s["nn"], s["uniq"]
@@ -589,6 +614,41 @@ def build_profile_spark(path: Path, settings: Settings | None = None) -> dict[st
                 **extra,
             }
         )
+    return profile_columns
+
+
+def build_profile_spark(path: Path, settings: Settings | None = None) -> dict[str, Any]:
+    """Profile the file at ``path`` (CSV, TSV, TXT or Parquet) with Spark."""
+    spark = get_session(settings)
+    cleaned, columns, names, encoding, delimiter = _read(spark, Path(path))
+    display = dict(zip(columns, names, strict=True))
+    cleaned = cleaned.persist()  # every scan below re-reads it; parse the file once
+    try:
+        rows, stats = _first_pass(cleaned, columns, delimiter)
+        if rows == 0:
+            raise LoadError("File has no data rows")
+        _date_formats(cleaned, columns, stats)
+        kinds = [_kind(s) for s in stats]
+        typed = cleaned.select(*_typed(columns, stats, kinds))
+
+        by_kind = {k: [c for c, kind in zip(columns, kinds, strict=True) if kind == k] for k in set(kinds)}
+        numeric = _numeric_stats(typed, by_kind.get("numeric", []), rows)
+        _outliers_and_histograms(typed, numeric)
+        non_null = {c: s["nn"] for c, s in zip(columns, stats, strict=True)}
+        categorical = _top_values(
+            typed, by_kind.get("categorical", []) + by_kind.get("boolean", []), non_null
+        )
+        datetimes = _datetime_stats(typed, by_kind.get("datetime", []))
+        texts = _text_stats(typed, by_kind.get("text", []))
+        correlations = _correlations(typed, numeric, display)
+        duplicates = rows - typed.distinct().count()
+        preview = _preview(cleaned, names, columns)
+        profile_columns = _columns(
+            columns, display, stats, kinds, numeric, categorical, datetimes, texts, rows
+        )
+        advanced_stats = _advanced(cleaned, columns, display, stats, kinds, profile_columns, datetimes, rows)
+    finally:
+        cleaned.unpersist()
 
     missing_cells = sum(c["missing"] for c in profile_columns)
     missing_pct = shared._pct(missing_cells, rows * len(profile_columns))
@@ -615,5 +675,6 @@ def build_profile_spark(path: Path, settings: Settings | None = None) -> dict[st
         "columns": profile_columns,
         "correlations": correlations,
         "warnings": warnings,
+        "advanced": advanced_stats,
         "preview": preview,
     }

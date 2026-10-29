@@ -22,6 +22,8 @@
   .brand { font:700 13px var(--font); letter-spacing:.14em; text-transform:uppercase; color:var(--sub); }
   .brand b { background:linear-gradient(90deg,var(--cyan),var(--violet)); -webkit-background-clip:text; background-clip:text; color:transparent; }
   h1 { margin:6px 0 4px; font-size:30px; letter-spacing:-.015em; overflow-wrap:anywhere; }
+  h3 { margin:26px 0 8px; font-size:14px; color:#9fb0c6; }
+  .muted { color:var(--sub); font-size:13px; }
   h2 { display:flex; align-items:center; gap:9px; margin:40px 0 14px; font-size:17px; color:#c9d4e3; }
   h2::before { content:""; width:4px; height:15px; border-radius:3px; background:linear-gradient(180deg,var(--cyan),var(--violet)); box-shadow:0 0 10px rgba(34,211,238,.7); }
   .muted { color:var(--sub); }
@@ -119,6 +121,83 @@
   {% if overview_charts %}
   <h2>Overview</h2>
   {% for chart in overview_charts %}<div class="card"><div class="k">{{ chart.title }}</div><div class="chart" data-chart="{{ chart.id }}"></div></div>{% endfor %}
+  {% endif %}
+
+  {% set adv = profile.advanced %}
+  {% if adv %}
+  <h2>Statistics</h2>
+  <p class="muted">{% if adv.sample.sampled %}Computed on a random sample of {{ adv.sample.rows }} of {{ adv.sample.of }} rows. {% endif %}p-values are adjusted for the number of tests (Benjamini-Hochberg); read effect sizes next to them.</p>
+
+  <h3>Location, spread and shape</h3>
+  <div class="card table-wrap" style="padding:0"><table>
+    <tr><th>Column</th><th>n</th><th>Mean</th><th>Median</th><th>Variance</th><th>Std</th><th>CV</th><th>Skew</th><th>Exc. kurtosis</th><th>95% CI of mean</th><th>Normal?</th><th>Best fit (KS)</th></tr>
+    {% for d in adv.distributions %}
+    <tr><td>{{ d.name }}</td><td>{{ d.n }}</td><td>{{ d.mean | num }}</td><td>{{ d.median | num }}</td><td>{{ d.variance | num }}</td><td>{{ d.std | num }}</td><td>{{ d.cv | num }}</td>
+        <td>{{ d.skew | num(2) }}</td><td>{{ d.kurtosis | num(2) }}</td><td>{{ d.ci95_mean[0] | num }} … {{ d.ci95_mean[1] | num }}</td>
+        <td>{% if d.normality %}{{ "no" if d.normality.rejected else "yes" }}{% else %}–{% endif %}</td><td>{{ d.best_fit or "–" }}</td></tr>
+    {% endfor %}
+  </table></div>
+
+  {% if adv.associations.numeric %}
+  <h3>Numeric pairs</h3>
+  <div class="card table-wrap" style="padding:0"><table>
+    <tr><th>A</th><th>B</th><th>Pearson r</th><th>Spearman ρ</th><th>Kendall τ</th><th>p (adj.)</th><th>Strength</th></tr>
+    {% for r in adv.associations.numeric[:12] %}
+    <tr><td>{{ r.a }}</td><td>{{ r.b }}</td><td>{{ r.pearson | num }}</td><td>{{ r.spearman | num }}</td><td>{{ r.kendall | num }}</td><td>{{ r.p_adj | pval }}</td><td>{{ r.strength }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+
+  {% if adv.associations.categorical %}
+  <h3>Categorical pairs (chi-square)</h3>
+  <div class="card table-wrap" style="padding:0"><table>
+    <tr><th>A</th><th>B</th><th>χ²</th><th>df</th><th>p (adj.)</th><th>Cramér's V</th><th>Strength</th></tr>
+    {% for r in adv.associations.categorical[:10] %}
+    <tr><td>{{ r.a }}</td><td>{{ r.b }}</td><td>{{ r.chi2 | num(2) }}</td><td>{{ r.dof }}</td><td>{{ r.p_adj | pval }}</td><td>{{ r.cramers_v | num }}</td><td>{{ r.strength }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+
+  {% if adv.associations.ordinal %}
+  <h3>Ordinal pairs (gamma, Somers' d)</h3>
+  <div class="card table-wrap" style="padding:0"><table>
+    <tr><th>A</th><th>B</th><th>Goodman–Kruskal γ</th><th>Kendall τ-b</th><th>Somers' d (B on A)</th><th>Somers' d (A on B)</th><th>p (adj.)</th></tr>
+    {% for r in adv.associations.ordinal[:10] %}
+    <tr><td>{{ r.a }}</td><td>{{ r.b }}</td><td>{{ r.gamma | num }}</td><td>{{ r.kendall_tau_b | num }}</td><td>{{ r.somers_d_b_on_a | num }}</td><td>{{ r.somers_d_a_on_b | num }}</td><td>{{ r.p_adj | pval }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+
+  {% if adv.associations.by_group %}
+  <h3>Numeric by group (ANOVA, Kruskal-Wallis)</h3>
+  <div class="card table-wrap" style="padding:0"><table>
+    <tr><th>Numeric</th><th>Group</th><th>F</th><th>p (adj.)</th><th>η²</th><th>Effect</th><th>Kruskal p</th><th>Levene p</th></tr>
+    {% for r in adv.associations.by_group[:10] %}
+    <tr><td>{{ r.numeric }}</td><td>{{ r.group }}</td><td>{{ r.f | num(2) }}</td><td>{{ r.p_adj | pval }}</td><td>{{ r.eta_squared | num }}</td><td>{{ r.effect }}</td><td>{{ r.p_kruskal | pval }}</td><td>{{ r.p_levene | pval }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
+
+  <h3>Consistency: grade {{ adv.consistency.grade }} ({{ adv.consistency.score }} / 100)</h3>
+  <div class="card table-wrap" style="padding:0"><table>
+    <tr><th>Column</th><th>Completeness</th><th>Validity</th><th>Uniqueness</th><th>Format</th><th>Degree</th></tr>
+    {% for c in adv.consistency.columns %}
+    <tr><td>{{ c.name }}</td><td>{{ (c.completeness * 100) | num(1) }}%</td><td>{{ (c.validity * 100) | num(1) }}%</td><td>{{ (c.uniqueness * 100) | num(1) }}%</td>
+        <td>{% if c.format %}{{ (c.format.share * 100) | num(0) }}% {{ c.format.dominant }}{% else %}–{% endif %}</td><td>{{ c.degree | num(1) }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% if adv.consistency.cronbach %}<p class="muted">Cronbach's α = {{ adv.consistency.cronbach.alpha | num }} ({{ adv.consistency.cronbach.label }}). {{ adv.consistency.cronbach.note }}</p>{% endif %}
+
+  {% if adv.sensitivity.columns %}
+  <h3>Sensitivity to outliers</h3>
+  <div class="card table-wrap" style="padding:0"><table>
+    <tr><th>Column</th><th>Outliers</th><th>Mean</th><th>Mean without</th><th>Δ mean %</th><th>Δ std %</th><th>Bootstrap 95% CI, mean</th><th>Verdict</th></tr>
+    {% for r in adv.sensitivity.columns %}
+    <tr><td>{{ r.name }}</td><td>{{ r.outliers_removed }}</td><td>{{ r.mean | num }}</td><td>{{ r.mean_without_outliers | num }}</td><td>{{ r.mean_shift_pct | num(1) }}</td><td>{{ r.std_shift_pct | num(1) }}</td>
+        <td>{{ r.bootstrap_mean_ci[0] | num }} … {{ r.bootstrap_mean_ci[1] | num }}</td><td>{{ r.robustness }}</td></tr>
+    {% endfor %}
+  </table></div>
+  {% endif %}
   {% endif %}
 
   <h2>Column details</h2>

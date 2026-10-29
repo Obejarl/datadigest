@@ -21,6 +21,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - A `spark` Docker target (`docker build --target spark .`, published as `:spark` on release), and a
   `spark` CI job with a coverage gate on the Spark module.
 
+- **Statistics tab and report section.** Variance, coefficient of variation, confidence intervals,
+  three normality tests and Kolmogorov-Smirnov distribution fits; Pearson/Spearman/Kendall,
+  chi-square with Cramér's V, Goodman-Kruskal gamma, Somers' d, ANOVA/Kruskal-Wallis with eta squared,
+  Cohen's d and Cliff's delta; degrees of consistency (completeness, validity, format, label variants,
+  duplicate-key conflicts, Cronbach's alpha); sensitivity analyses (outlier effects, bootstrap
+  intervals, fragile correlations). p-values are adjusted for multiple testing. Both engines produce
+  them (from a sample of at most 50,000 rows).
+
 ### Changed
 - Server-side files are profiled only; optimizations need an uploaded file (`409` otherwise).
 

@@ -69,6 +69,7 @@
       <button class="tab" role="tab" data-tab="columns">Columns <span class="count" id="col-count"></span> <kbd>2</kbd></button>
       <button class="tab" role="tab" data-tab="correlations">Correlations <kbd>3</kbd></button>
       <button class="tab" role="tab" data-tab="preview">Preview <kbd>4</kbd></button>
+      <button class="tab" role="tab" data-tab="stats">Statistics <kbd>5</kbd></button>
     </div>
 
     <div class="pane active" id="pane-overview">
@@ -119,6 +120,11 @@
         <div class="card-h"><h2 class="card-t">First rows</h2><span class="chip" id="preview-note"></span></div>
         <div class="table-wrap preview-wrap"><table class="preview"><thead id="preview-head"></thead><tbody id="preview-body"></tbody></table></div>
       </section>
+    </div>
+
+    <div class="pane" id="pane-stats">
+      <div class="seg" id="stats-nav" role="tablist"></div>
+      <div id="stats-body"></div>
     </div>
   </section>
 
