@@ -417,7 +417,7 @@ GitHub Actions runs seven jobs on every push:
   - the cleanup CronJob runs once;
   - after the API and database pods are deleted, the data is still there.
 
-Pushing a tag such as `v0.7.0` runs the **release** workflow: it checks that the tag matches
+Pushing a tag such as `v0.7.1` runs the **release** workflow: it checks that the tag matches
 the version in the code and in `CHANGELOG.md`, smoke-tests the image (and the Spark variant),
 pushes them to `ghcr.io/obejarl/datadigest`, and creates the GitHub Release from the changelog.
 

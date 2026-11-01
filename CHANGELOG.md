@@ -3,6 +3,11 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (0.x: the API may still change between minors).
 
+## [Unreleased]
+
+### Changed
+- README screenshots of the optimizer, the production plan and the capacity page show the current interface.
+
 ## [0.7.1] - 2026-11-01
 
 ### Changed
