@@ -124,9 +124,9 @@ Son çare olarak [`cleanup.py`](../datadigest/cleanup.py) içindeki `fail_stuck`
 **Dene:**
 
 ```bash
-docker build -t datadigest:0.7.0 .
+docker build -t datadigest:0.7.1 .
 docker image ls datadigest
-docker history datadigest:0.7.0
+docker history datadigest:0.7.1
 ```
 
 Sonra kodda bir satır değiştirip tekrar build et. Hangi katmanların önbellekten geldiğine bak.

@@ -355,8 +355,8 @@ docker compose up --build
 ### 4. Kubernetes (Docker Desktop, kind or minikube)
 
 ```bash
-docker build -t datadigest:0.7.0 .
-# kind: kind load docker-image datadigest:0.7.0   minikube: minikube image load datadigest:0.7.0
+docker build -t datadigest:0.7.1 .
+# kind: kind load docker-image datadigest:0.7.1   minikube: minikube image load datadigest:0.7.1
 cp k8s/secret.example.yaml k8s/secret.yaml           # then change the password
 kubectl apply -k k8s/
 kubectl -n datadigest get pods -w

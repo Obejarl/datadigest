@@ -3,7 +3,7 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (0.x: the API may still change between minors).
 
-## [Unreleased]
+## [0.7.1] - 2026-11-01
 
 ### Changed
 - **Interface polish.** Staggered entrance animations, animated page changes (cross-document
@@ -123,5 +123,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - REST API, PostgreSQL models with Alembic migrations, a Redis queue with workers, a web
   dashboard, Docker, Docker Compose, Kubernetes manifests and CI.
 
+[0.7.1]: https://github.com/Obejarl/datadigest/releases/tag/v0.7.1
+[0.7.0]: https://github.com/Obejarl/datadigest/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Obejarl/datadigest/releases/tag/v0.6.0
 [0.5.0]: https://github.com/Obejarl/datadigest/commits/7763142
