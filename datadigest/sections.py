@@ -191,6 +191,14 @@ def openapi_tags() -> list[dict]:
     ]
 
 
+# Runs before the first paint, so the page transition (style.css) knows which way it is going:
+# the page we came from left the direction in sessionStorage (fx.js).
+DIRECTION_SCRIPT = (
+    "<script>try{document.documentElement.dataset.dir=sessionStorage.getItem('dd-dir')||'';"
+    "sessionStorage.removeItem('dd-dir')}catch(e){}</script>"
+)
+
+
 def render(html: str, path: str) -> str:
     """Fill a page's placeholders. Pages stay plain HTML files; only the shared parts are injected."""
     section = section_of(path)
@@ -198,4 +206,5 @@ def render(html: str, path: str) -> str:
         html.replace("<!--nav-->", nav_html(path))
         .replace("<!--sections-->", cards_html(section.key if section else ""))
         .replace("<!--sitemap-->", sitemap_html(path))
+        .replace("</head>", DIRECTION_SCRIPT + "\n</head>", 1)
     )

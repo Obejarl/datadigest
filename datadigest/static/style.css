@@ -707,3 +707,180 @@ a.section-card:hover { text-decoration: none; border-color: var(--cyan); transfo
 .sitemap { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 22px; margin-bottom: 10px; font-size: 13px; }
 .sitemap b { color: var(--dim); font-weight: 600; margin-right: 6px; }
 .sitemap a[aria-current="page"] { color: var(--txt); }
+/* ── Depth and motion ────────────────────────────────────────────────────────
+   The page is built as layers at different distances: a far aurora, drifting orbs, a grid
+   floor that runs to a horizon, glass surfaces above them, and a bar that floats on top.
+   Layers move at different speeds with the pointer and the scroll (fx.js sets --px, --py
+   and --sy), which is what reads as depth. Moving between pages keeps that space: going
+   deeper zooms in, going back zooms out, and moving along the menu slides sideways.
+   Everything here is decoration: the prefers-reduced-motion rule above switches it off. */
+
+:root {
+  --px: 0; --py: 0; --sy: 0;
+  --lift-1: inset 0 1px 0 rgba(255, 255, 255, 0.07), 0 1px 1px rgba(0, 0, 0, 0.25), 0 8px 18px rgba(0, 0, 0, 0.22), 0 22px 48px rgba(0, 0, 0, 0.28);
+  --lift-2: inset 0 1px 0 rgba(255, 255, 255, 0.1), 0 2px 2px rgba(0, 0, 0, 0.25), 0 16px 30px rgba(0, 0, 0, 0.3), 0 40px 80px rgba(0, 0, 0, 0.38);
+  --spring: cubic-bezier(0.34, 1.4, 0.5, 1);
+  --glide: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* Layer 1 (farthest): the aurora drifts slowly and shifts a little against the pointer. */
+body::before { translate: calc(var(--px) * -14px) calc(var(--py) * -10px + var(--sy) * -0.02px); }
+
+/* Layer 2: three soft orbs, nearer than the aurora, so they move more. */
+.depth { position: fixed; inset: 0; z-index: -1; overflow: hidden; pointer-events: none; }
+.depth i {
+  position: absolute; border-radius: 50%; filter: blur(70px); opacity: 0.5; will-change: transform;
+  translate: calc(var(--px) * var(--k, 30) * -1px) calc(var(--py) * var(--k, 30) * -1px + var(--sy) * var(--s, -0.06) * 1px);
+  transition: translate 0.9s var(--glide);
+  animation: drift 26s ease-in-out infinite alternate;
+}
+.depth i:nth-child(1) { --k: 26; --s: -0.05; width: 420px; height: 420px; left: -6%; top: 12%; background: rgba(34, 211, 238, 0.22); }
+.depth i:nth-child(2) { --k: 44; --s: -0.11; width: 340px; height: 340px; right: 2%; top: 30%; background: rgba(167, 139, 250, 0.22); animation-duration: 32s; animation-delay: -8s; }
+.depth i:nth-child(3) { --k: 64; --s: -0.18; width: 260px; height: 260px; left: 42%; top: 68%; background: rgba(16, 227, 154, 0.16); animation-duration: 22s; animation-delay: -14s; }
+@keyframes drift { from { transform: translate3d(0, 0, 0) scale(1); } to { transform: translate3d(40px, -30px, 0) scale(1.12); } }
+
+/* Layer 3: the grid becomes a floor that recedes to a horizon. */
+body::after {
+  inset: auto -30% -18% -30%; height: 62vh; opacity: 0.55; background-size: 56px 56px; transform-origin: 50% 100%;
+  transform: perspective(700px) rotateX(64deg) translate3d(calc(var(--px) * -22px), 0, 0);
+  mask-image: linear-gradient(to top, #000 0%, rgba(0, 0, 0, 0.55) 35%, transparent 78%);
+  background-position: 0 calc(var(--sy) * 0.12px);
+}
+
+/* The bar floats above the page as a pane of glass, detached from the edges. */
+.topbar {
+  top: 12px; left: 16px; right: 16px; height: 58px; padding: 0 18px; border-radius: 18px; border: 1px solid var(--edge);
+  background: linear-gradient(180deg, rgba(18, 26, 42, 0.72), rgba(10, 15, 26, 0.62));
+  backdrop-filter: blur(22px) saturate(170%); box-shadow: var(--lift-1);
+  transition: background 0.35s, box-shadow 0.35s, top 0.35s var(--glide), left 0.35s var(--glide), right 0.35s var(--glide);
+}
+.topbar.scrolled {
+  top: 8px; background: linear-gradient(180deg, rgba(14, 20, 34, 0.9), rgba(8, 12, 22, 0.84)); box-shadow: var(--lift-2);
+}
+.topbar::after { left: 18px; right: 18px; bottom: 0; border-radius: 2px; opacity: 0.55; }
+.topbar::before { left: 18px; width: calc(100% - 36px); border-radius: 2px; }
+main { padding-top: 100px; }
+html { scroll-padding-top: 96px; }
+
+/* Menu: one glass pill sits under the current page. It glides to whatever link the pointer
+   is on, and because it has its own transition name it also glides from the old page's link
+   to the new page's link while the page changes. */
+.nav { position: relative; }
+.nav a { z-index: 1; }
+.nav.inked a.active, .nav.inked a:hover { background: transparent; }
+.nav.inked a::after { display: none; }
+.nav-ink {
+  position: absolute; left: 0; top: 50%; height: 34px; width: 0; margin-top: -17px; border-radius: 10px; pointer-events: none;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.16), inset 0 0 0 1px rgba(34, 211, 238, 0.22), 0 6px 18px rgba(34, 211, 238, 0.16);
+  transition: transform 0.5s var(--spring), width 0.5s var(--spring), opacity 0.3s;
+  view-transition-name: nav-ink;
+}
+.nav-ink::after {
+  content: ""; position: absolute; left: 22%; right: 22%; bottom: -1px; height: 2px; border-radius: 2px;
+  background: linear-gradient(90deg, var(--cyan), var(--violet)); box-shadow: 0 0 12px rgba(34, 211, 238, 0.8);
+}
+::view-transition-group(nav-ink) { animation-duration: 0.55s; animation-timing-function: var(--spring); }
+
+/* Surfaces: layered shadows, and small cards tilt towards the pointer (fx.js sets --rx, --ry).
+   Their contents sit at different heights, so the tilt separates icon, title and text. */
+.card, .tile, .kind-card, .section-card, .col, .drop { box-shadow: var(--lift-1); }
+.card:hover { box-shadow: var(--lift-2); }
+.bento, .kinds, .sections { perspective: 1100px; }
+.tile, .kind-card, .section-card {
+  --rx: 0deg; --ry: 0deg; --tz: 0px; transform-style: preserve-3d; will-change: transform;
+  transform: rotateX(var(--rx)) rotateY(var(--ry)) translate3d(0, 0, var(--tz));
+  transition: transform 0.6s var(--glide), border-color 0.35s, box-shadow 0.45s;
+}
+.tile.tilting, .kind-card.tilting, .section-card.tilting { transition: transform 0.12s linear, border-color 0.35s, box-shadow 0.45s; }
+.tile:hover, .kind-card:hover, a.section-card:hover, .section-card:hover {
+  --tz: 18px; transform: rotateX(var(--rx)) rotateY(var(--ry)) translate3d(0, 0, var(--tz));
+  box-shadow: var(--lift-2), 0 0 0 1px rgba(34, 211, 238, 0.16), 0 30px 70px rgba(34, 211, 238, 0.1);
+}
+/* Only while hovered: at rest everything lies flat, so text keeps its place inside the padding. */
+.tile > *, .kind-card > *, .section-card > * { transition: transform 0.6s var(--glide); }
+.tile:hover .lbl, .kind-card:hover .ico, .section-card:hover .ico { transform: translateZ(26px); }
+.tile:hover .v, .kind-card:hover h3, .section-card:hover strong { transform: translateZ(18px); }
+.tile:hover .s, .tile:hover .meter, .kind-card:hover p, .kind-card:hover .method, .section-card:hover .q,
+.section-card:hover .muted, .section-card:hover ul { transform: translateZ(8px); }
+.kind-card:hover .actions, .section-card:hover .btn, .section-card:hover .here { transform: translateZ(22px); }
+/* Lifted contents must not be clipped, so the corner glow is drawn inside the card instead of
+   being a circle that hangs outside it and relies on overflow: hidden. */
+.tile, .kind-card { overflow: visible; }
+.tile::after, .kind-card::after {
+  inset: 0; width: auto; height: auto; border-radius: inherit;
+  background: radial-gradient(70px circle at calc(100% - 30px) 30px, var(--tint, rgba(34, 211, 238, 0.2)), transparent 70%);
+}
+.section-card::before {                                     /* the pointer spotlight, like the other surfaces */
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none; opacity: 0; transition: opacity 0.35s;
+  background: radial-gradient(420px circle at var(--mx, 50%) var(--my, 0%), rgba(34, 211, 238, 0.12), rgba(167, 139, 250, 0.06) 45%, transparent 70%);
+}
+.section-card { position: relative; }
+.section-card:hover::before { opacity: 1; }
+.btn.primary { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35), 0 8px 22px rgba(34, 211, 238, 0.28); }
+.btn.primary:hover { box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 14px 34px rgba(34, 211, 238, 0.42); }
+
+/* Entrance: surfaces come forward out of the distance instead of only rising. */
+@keyframes arrive { from { opacity: 0; transform: translate3d(0, 22px, -80px) rotateX(8deg); filter: blur(6px); } }
+.tile, .kind-card, .section-card { animation: arrive 0.75s var(--glide) backwards; }
+.sections > :nth-child(1) { animation-delay: 0.1s; }
+.sections > :nth-child(2) { animation-delay: 0.18s; }
+.sections > :nth-child(3) { animation-delay: 0.26s; }
+.phead h1 { animation: headline 0.8s var(--glide) backwards; }
+@keyframes headline { from { opacity: 0; transform: translate3d(0, 10px, 0); letter-spacing: -0.03em; filter: blur(8px); } }
+
+/* Tabs: the pane slides in from the side the tab is on (fx.js sets data-dir on <main>). */
+.pane.active { animation: pane-in 0.5s var(--glide); }
+main[data-dir="back"] .pane.active { animation-name: pane-in-back; }
+@keyframes pane-in { from { opacity: 0; transform: translate3d(34px, 0, 0); filter: blur(5px); } }
+@keyframes pane-in-back { from { opacity: 0; transform: translate3d(-34px, 0, 0); filter: blur(5px); } }
+
+/* Moving between pages. The old page and the new one are two layers in the same space.
+   html[data-dir] is set before the first paint (see the inline script in each page's head):
+     forward / back   along the menu: the pages pass each other sideways, the old one receding
+     in / out         into a dataset or a result, and back out: a zoom through the page
+     (none)           anything else: the old page sinks back, the new one comes forward */
+::view-transition-old(root), ::view-transition-new(root) {
+  animation-duration: 0.5s; animation-timing-function: var(--glide); transform-origin: 50% 30%;
+}
+::view-transition-old(root) { animation-name: vt-sink; }
+::view-transition-new(root) { animation-name: vt-surface; }
+@keyframes vt-sink { to { opacity: 0; transform: scale(0.95); filter: blur(8px); } }
+@keyframes vt-surface { from { opacity: 0; transform: scale(1.04); filter: blur(8px); } }
+
+html[data-dir="forward"]::view-transition-old(root) { animation-name: vt-out-left; }
+html[data-dir="forward"]::view-transition-new(root) { animation-name: vt-in-right; }
+html[data-dir="back"]::view-transition-old(root) { animation-name: vt-out-right; }
+html[data-dir="back"]::view-transition-new(root) { animation-name: vt-in-left; }
+@keyframes vt-out-left { to { opacity: 0; transform: translate3d(-7%, 0, 0) scale(0.94); filter: blur(6px); } }
+@keyframes vt-in-right { from { opacity: 0; transform: translate3d(9%, 0, 0) scale(0.98); filter: blur(6px); } }
+@keyframes vt-out-right { to { opacity: 0; transform: translate3d(7%, 0, 0) scale(0.94); filter: blur(6px); } }
+@keyframes vt-in-left { from { opacity: 0; transform: translate3d(-9%, 0, 0) scale(0.98); filter: blur(6px); } }
+
+html[data-dir="in"]::view-transition-old(root) { animation-name: vt-pass-through; }
+html[data-dir="in"]::view-transition-new(root) { animation-name: vt-from-far; }
+html[data-dir="out"]::view-transition-old(root) { animation-name: vt-to-far; }
+html[data-dir="out"]::view-transition-new(root) { animation-name: vt-from-near; }
+@keyframes vt-pass-through { to { opacity: 0; transform: scale(1.12); filter: blur(10px); } }
+@keyframes vt-from-far { from { opacity: 0; transform: scale(0.9); filter: blur(10px); } }
+@keyframes vt-to-far { to { opacity: 0; transform: scale(0.9); filter: blur(10px); } }
+@keyframes vt-from-near { from { opacity: 0; transform: scale(1.12); filter: blur(10px); } }
+
+/* Dialogs come forward from behind the page; the page itself steps back. */
+.modal::backdrop { background: rgba(3, 6, 12, 0.66); backdrop-filter: blur(10px) saturate(120%); }
+.modal { box-shadow: var(--lift-2), 0 0 0 1px rgba(255, 255, 255, 0.06); }
+@keyframes modal-in { from { opacity: 0; transform: perspective(900px) translate3d(0, 24px, -120px) rotateX(10deg); filter: blur(6px); } }
+
+@media (max-width: 760px) {
+  .topbar { top: 8px; left: 8px; right: 8px; padding: 0 12px; }
+  main { padding-top: 88px; }
+  .depth i { filter: blur(50px); animation: none; }
+  .tile, .kind-card, .section-card { transform: none; }
+  .tile:hover, .kind-card:hover, .section-card:hover { transform: none; }
+  .tile:hover > *, .kind-card:hover > *, .section-card:hover > * { transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  @view-transition { navigation: none; }
+  .depth i, body::before, body::after { translate: none; }
+  .tile, .kind-card, .section-card { transform: none !important; }
+}

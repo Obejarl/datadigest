@@ -349,6 +349,10 @@ jobs:
         run: |
           cp k8s/secret.example.yaml k8s/secret.yaml
           kubectl apply -k deploy/k8s-spark/
+          # SPARK_MIN_MB decides when "auto" picks Spark; the test file is a few MB, so lower the bar.
+          # Set now, before anything runs: changing it later starts a second worker pod, and the old
+          # one can still take the job while it shuts down.
+          kubectl -n datadigest set env deploy/worker SPARK_MIN_MB=1
       - name: Wait for the database, the Spark cluster and the deployments
         run: |
           kubectl -n datadigest rollout status statefulset/postgres --timeout=180s
@@ -382,9 +386,6 @@ jobs:
           for i in $(seq 1 30); do curl -fsS localhost:8000/readyz >/dev/null 2>&1 && break; sleep 2; done
           curl -fsS localhost:8000/api/server-files | tee files.json
           grep -q '"orders.csv"' files.json
-          # SPARK_MIN_MB decides when "auto" picks Spark; the test file is a few MB, so lower the bar.
-          kubectl -n datadigest set env deploy/worker SPARK_MIN_MB=1
-          kubectl -n datadigest rollout status deploy/worker --timeout=180s
           dataset=$(curl -fsS -X POST localhost:8000/api/server-files/orders.csv | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
           for i in $(seq 1 90); do
             st=$(curl -fsS "localhost:8000/api/datasets/$dataset" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")

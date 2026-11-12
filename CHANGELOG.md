@@ -26,6 +26,15 @@ sections under one roof.
 - **Optimization runs respect accounts.** A run belongs to its dataset: members see and change
   only the runs on their own datasets (somebody else's run answers `404`), administrators see
   all of them.
+- **Depth and motion.** The page is built as layers at different distances: an aurora, drifting
+  orbs and a grid floor that runs to a horizon move at different speeds with the pointer and the
+  scroll; the top bar floats above the page as a pane of glass; tiles and section cards tilt
+  towards the pointer with their contents at different heights. Moving between pages keeps that
+  space: along the menu the pages pass each other sideways, opening a dataset or a result zooms
+  in, going back zooms out, and a glass pill glides from the old menu entry to the new one. Tabs
+  slide in from the side they are on. All of it is switched off by `prefers-reduced-motion`.
+- Scripts and stylesheets are stamped with their modification time, so a browser never keeps an
+  old stylesheet next to new markup between releases.
 - `STATS_MAX_ROWS`: the number of rows the statistics are computed on (default 50,000).
 - `python -m datadigest`: migrate and serve in one command, with no other service to install.
 - The sign-in page shows its error messages in a styled box (they were unstyled).

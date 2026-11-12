@@ -92,6 +92,13 @@ async def security_headers(request, call_next):
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
+def asset_stamp() -> str:
+    """Changes whenever a script or stylesheet changes. The version alone is not enough: between
+    releases a browser would keep an old stylesheet next to new markup."""
+    newest = max(f.stat().st_mtime_ns for f in STATIC.iterdir() if f.suffix in {".css", ".js", ".svg"})
+    return format(newest // 1_000_000 % 0xFFFFFFFF, "x")
+
+
 def page(name: str, path: str) -> HTMLResponse:
     """A static page with the shared parts filled in: the navigation, the section cards and the
     footer links all come from datadigest/sections.py, so no page carries its own copy.
@@ -99,6 +106,7 @@ def page(name: str, path: str) -> HTMLResponse:
     HTML is revalidated on every visit; it references versioned assets (style.css?v=...),
     so a new release reaches browsers immediately instead of mixing old and new files."""
     html = (STATIC / name).read_text(encoding="utf-8")
+    html = html.replace(f"?v={app.version}", f"?v={app.version}-{asset_stamp()}")
     return HTMLResponse(sections.render(html, path), headers={"Cache-Control": "no-cache"})
 
 
