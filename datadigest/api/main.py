@@ -1,38 +1,60 @@
 import logging
 import time
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from datadigest import metrics
+from datadigest import accounts, metrics
 from datadigest.api import (
     auth,
+    routes_accounts,
+    routes_capacity,
     routes_datasets,
     routes_health,
-    routes_optimize,
     routes_samples,
     routes_serverfiles,
     routes_stats,
 )
+from datadigest.config import get_settings
+from datadigest.db import SessionLocal
 
 STATIC = Path(__file__).parent.parent / "static"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
 
+log = logging.getLogger(__name__)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    settings = get_settings()
+    if settings.accounts_enabled:
+        if not settings.secret_key:
+            log.warning("SECRET_KEY is not set: sessions end when this process restarts")
+        try:
+            accounts.bootstrap_admin(SessionLocal, settings)
+        except Exception:  # a bad ADMIN_PASSWORD or a missing table must not stop the API
+            log.exception("could not create the first administrator")
+    yield
+
+
 app = FastAPI(
     title="DataDigest",
-    version="0.7.1",
+    version="0.8.0",
     description="Upload a CSV, get an automatic data-quality profile, charts and an HTML report.",
+    lifespan=lifespan,
 )
 app.include_router(routes_health.router)
 app.include_router(auth.router)
+app.include_router(routes_accounts.router)
 app.include_router(routes_datasets.router)
 app.include_router(routes_stats.router)
 app.include_router(routes_samples.router)
 app.include_router(routes_serverfiles.router)
-app.include_router(routes_optimize.router)
+app.include_router(routes_capacity.router)
 
 
 # Middleware added later wraps the earlier ones, so the order here is: auth (innermost, so a
@@ -87,14 +109,9 @@ def login_page():
     return page("login.html")
 
 
-@app.get("/optimize", include_in_schema=False)
-def optimize_page():
-    return page("optimize.html")
-
-
-@app.get("/optimizations/{opt_id}", include_in_schema=False)
-def optimization_page(opt_id: str):
-    return page("optimization.html")
+@app.get("/account", include_in_schema=False)
+def account_page():
+    return page("account.html")
 
 
 @app.get("/capacity", include_in_schema=False)

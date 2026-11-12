@@ -25,11 +25,11 @@ from sqlalchemy.orm import sessionmaker
 from datadigest import jobqueue, metrics
 from datadigest.config import get_settings
 from datadigest.db import SessionLocal
-from datadigest.jobs import mark_failed, process_dataset, process_optimization
+from datadigest.jobs import mark_failed, process_dataset
 
 log = logging.getLogger("datadigest.worker")
 
-HANDLERS = {"dataset": process_dataset, "optimization": process_optimization}
+HANDLERS = {"dataset": process_dataset}
 TRANSIENT_ERRORS = (RedisConnectionError, RedisTimeoutError, OperationalError)
 MAX_BACKOFF_SECONDS = 30.0
 

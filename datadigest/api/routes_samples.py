@@ -7,6 +7,7 @@ from pydantic import BaseModel
 from redis import Redis
 from sqlalchemy.orm import Session, sessionmaker
 
+from datadigest.api.auth import Identity, current_identity
 from datadigest.api.deps import get_redis
 from datadigest.api.routes_datasets import create_dataset, schedule
 from datadigest.api.schemas import DatasetOut
@@ -20,8 +21,6 @@ SAMPLES = {
     "sales.csv": "1,005 synthetic orders with missing values, outliers and duplicate rows",
     "tr_survey.csv": "A Turkish Excel export: ';' separated, Windows-1254, decimal commas",
 }
-# Inputs for the optimizer examples; loadable by name but not listed on the profiling page.
-OPTIMIZER_SAMPLES = {"opt_production.csv", "opt_transport.csv", "opt_assignment.csv", "opt_projects.csv"}
 
 
 class SampleOut(BaseModel):
@@ -47,14 +46,15 @@ def list_samples(settings: Settings = Depends(get_settings)):
 def load_sample(
     name: str,
     background: BackgroundTasks,
+    identity: Identity | None = Depends(current_identity),
     db: Session = Depends(get_db),
     factory: sessionmaker = Depends(get_session_factory),
     redis: Redis | None = Depends(get_redis),
     settings: Settings = Depends(get_settings),
 ):
     path = _path(settings, name)
-    if (name not in SAMPLES and name not in OPTIMIZER_SAMPLES) or not path.is_file():
+    if name not in SAMPLES or not path.is_file():
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Unknown sample")
-    dataset = create_dataset(db, name, path.read_bytes())
+    dataset = create_dataset(db, name, path.read_bytes(), identity)
     schedule(dataset.id, background, factory, redis, settings)
     return dataset

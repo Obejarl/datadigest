@@ -6,6 +6,7 @@ from redis import Redis
 from sqlalchemy.orm import Session, sessionmaker
 
 from datadigest import serverfiles
+from datadigest.api.auth import Identity, current_identity
 from datadigest.api.deps import get_redis
 from datadigest.api.routes_datasets import schedule
 from datadigest.api.schemas import DatasetOut
@@ -41,6 +42,7 @@ def list_server_files(settings: Settings = Depends(get_settings)):
 def register_server_file(
     name: str,
     background: BackgroundTasks,
+    identity: Identity | None = Depends(current_identity),
     db: Session = Depends(get_db),
     factory: sessionmaker = Depends(get_session_factory),
     redis: Redis | None = Depends(get_redis),
@@ -51,7 +53,11 @@ def register_server_file(
     except serverfiles.ServerFileError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, str(exc)) from exc
     dataset = Dataset(
-        name=path.stem[:255], filename=name[:255], size_bytes=serverfiles.size_of(path), source_path=name
+        name=path.stem[:255],
+        filename=name[:255],
+        size_bytes=serverfiles.size_of(path),
+        source_path=name,
+        owner_id=identity.user_id if identity else None,
     )
     db.add(dataset)
     db.commit()

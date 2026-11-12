@@ -1,7 +1,7 @@
 [project]
 name = "datadigest"
-version = "0.7.1"
-description = "Upload a CSV, get an automatic data-quality profile, charts and an HTML report."
+version = "0.8.0"
+description = "Tells you whether a CSV can be trusted: a quality score, the problems behind it, statistics in plain words and a report."
 requires-python = ">=3.13"
 license = "MIT"
 

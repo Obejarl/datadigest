@@ -1,6 +1,7 @@
 #!/usr/bin/env sh
-# Smoke-test a running DataDigest: readiness, then a full profile and a full optimization
-# (proves the bundled samples and the SciPy solver are in the image, not just that it boots).
+# Smoke-test a running DataDigest: readiness, then six full profiles of the bundled samples
+# (proves the samples and the statistics stack are in the image, not just that it boots;
+# six jobs queued at once also give every worker something to do).
 #
 #   scripts/smoke_test.sh http://localhost:8000
 set -eu
@@ -32,17 +33,16 @@ wait_for() {  # $1 = resource URL, prints the final "status result" line
   done
 }
 
-dataset=$(api -X POST "$BASE/api/samples/sales.csv" | json "d['id']")
-profile=$(wait_for "$BASE/api/datasets/$dataset")
-echo "profile: $profile"
-[ "$(echo "$profile" | cut -d' ' -f1)" = "done" ] || exit 1
-
-for kind in production transport assignment knapsack; do
-  run=$(api -X POST "$BASE/api/optimize/examples/$kind" | json "d['id']")
-  result=$(wait_for "$BASE/api/optimizations/$run")
-  echo "$kind: $result"
-  [ "$result" = "done optimal" ] || exit 1
+ids=""
+for sample in sales.csv tr_survey.csv sales.csv tr_survey.csv sales.csv tr_survey.csv; do
+  ids="$ids $(api -X POST "$BASE/api/samples/$sample" | json "d['id']")"
 done
+for dataset in $ids; do
+  profile=$(wait_for "$BASE/api/datasets/$dataset")
+  echo "profile $dataset: $profile"
+  [ "$(echo "$profile" | cut -d' ' -f1)" = "done" ] || exit 1
+done
+api "$BASE/api/datasets/$dataset/profile" | json "'quality score: %s' % d['summary']['quality']['score']"
 
 api "$BASE/api/capacity" | json "'capacity: %s workers recommended' % d['objective']"
 echo "smoke test passed"

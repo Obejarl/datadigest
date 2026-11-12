@@ -1,0 +1,15 @@
+# Where the big files live. Spark executors read the file themselves, so the volume is mounted
+# in several pods at once.
+#
+# ReadWriteOnce is enough on a single-node cluster (kind, minikube, Docker Desktop): all pods are
+# on the node that holds the volume. On a multi-node cluster use a storage class that supports
+# ReadWriteMany (NFS, CephFS, EFS, Azure Files) and change accessModes accordingly.
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: large-data
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 10Gi

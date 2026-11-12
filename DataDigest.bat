@@ -12,7 +12,7 @@ TITLE DataDigest  -  Launcher
 ::    DataDigest.bat start --no-browser
 ::    DataDigest.bat docker          full stack with Docker Compose
 ::    DataDigest.bat monitoring      Docker stack + Prometheus + Grafana
-::    DataDigest.bat demo            load sample datasets and optimization examples
+::    DataDigest.bat demo            load the sample datasets
 ::    DataDigest.bat health          pre-flight checks
 ::    DataDigest.bat test            run the test suite
 ::    DataDigest.bat stop            stop the local server and the Docker stack
@@ -111,7 +111,7 @@ call :GET_STATUS
 for /f "usebackq delims=" %%d in (`powershell -NoProfile -InputFormat None -Command "Get-Date -Format 'dd.MM.yyyy HH:mm'"`) do set "NOW=%%d"
 echo.
 echo %CY%  ╔════════════════════════════════════════════════════════════════════════════╗%R%
-echo %CY%  ║ %WH%%B%DataDigest%R%  %D%%GR%//%R%  %VI%CSV profilleme · Optimizasyon · Kapasite planlama%R%          %CY%║%R%
+echo %CY%  ║ %WH%%B%DataDigest%R%  %D%%GR%//%R%  %VI%CSV profilleme · Istatistik · Kapasite planlama%R%            %CY%║%R%
 echo %CY%  ╠════════════════════════════════════════════════════════════════════════════╣%R%
 echo %CY%  ║ %GR%PANEL  :%R% %CY%%API_URL%%R%          %GR%TARIH :%R% %WH%%NOW%%R%           %CY%║%R%
 echo %CY%  ╚════════════════════════════════════════════════════════════════════════════╝%R%
@@ -128,7 +128,7 @@ echo      %BG_C% [ 2 ] %R%  %CY%DOCKER: TAM SISTEM%R%   %GR%PostgreSQL + Redis +
 echo      %BG_C% [ 3 ] %R%  %CY%DOCKER + IZLEME%R%      %GR%Ayrica Prometheus ve Grafana panosu%R%
 echo.
 echo      %BG_V% [ 4 ] %R%  %VI%PANELI AC%R%            %GR%%API_URL% tarayicida%R%
-echo      %BG_V% [ 5 ] %R%  %VI%ORNEK VERI%R%           %GR%2 ornek veri seti + 4 optimizasyon ornegi yukler%R%
+echo      %BG_V% [ 5 ] %R%  %VI%ORNEK VERI%R%           %GR%2 ornek veri setini yukler ve profiller%R%
 echo.
 echo      %BG_Y% [ 6 ] %R%  %YL%SAGLIK KONTROLU%R%      %GR%Python, ortam, port, Docker, WSL%R%
 echo      %BG_Y% [ 7 ] %R%  %YL%TESTLER%R%              %GR%pytest ile tum testleri calistirir%R%
@@ -384,7 +384,7 @@ exit /b 0
 ::==========================================================================
 echo.
 echo %VI%  ╔════════════════════════════════════════════════════════════════════════════╗%R%
-echo %VI%  ║ %WH%%B%ORNEK VERI%R%  %GR%profil ornekleri ve dort optimizasyon ornegi%R%                   %VI%║%R%
+echo %VI%  ║ %WH%%B%ORNEK VERI%R%  %GR%iki ornek veri seti%R%                                            %VI%║%R%
 echo %VI%  ╚════════════════════════════════════════════════════════════════════════════╝%R%
 echo.
 call :GET_STATUS
@@ -392,9 +392,9 @@ if not "%APP_ONLINE%"=="1" (
     echo  %RD%[ X  ]%R% %WH%Sunucu calismiyor. Once [1] Kur ve baslat.%R%
     exit /b 1
 )
-powershell -NoProfile -InputFormat None -Command "$u = '%CHECK_URL%'; $ok = $true; $h = @{}; if ($env:ACCESS_TOKEN) { $h['Authorization'] = 'Bearer ' + $env:ACCESS_TOKEN }; foreach ($s in 'sales.csv', 'tr_survey.csv') { try { $d = Invoke-RestMethod -Method Post -Headers $h -Uri ($u + '/api/samples/' + $s) -TimeoutSec 15; Write-Host ('  [ OK ] Veri seti yuklendi: ' + $s) -ForegroundColor Green } catch { Write-Host ('  [ X  ] ' + $s + ': ' + $_.Exception.Message) -ForegroundColor Red; $ok = $false } }; foreach ($k in 'production', 'transport', 'assignment', 'knapsack') { try { $o = Invoke-RestMethod -Method Post -Headers $h -Uri ($u + '/api/optimize/examples/' + $k) -TimeoutSec 15; for ($i = 0; $i -lt 30; $i++) { $r = Invoke-RestMethod -Headers $h -Uri ($u + '/api/optimizations/' + $o.id) -TimeoutSec 10; if ($r.status -eq 'done' -or $r.status -eq 'failed') { break }; Start-Sleep -Milliseconds 500 }; $b = $r.result.baseline; $lift = if ($b -and $null -ne $b.uplift_pct) { (' (+{0:N1}%% vs basit kural)' -f $b.uplift_pct) } else { '' }; $names = @{ production = 'Uretim plani'; transport = 'Ulastirma'; assignment = 'Atama'; knapsack = 'Butce secimi' }; Write-Host ('  [ OK ] ' + $names[$k] + ': ' + $r.result_status + ', ' + $r.result.objective_label + ' = ' + ('{0:N2}' -f $r.objective) + $lift) -ForegroundColor Green } catch { Write-Host ('  [ X  ] ' + $k + ': ' + $_.Exception.Message) -ForegroundColor Red; $ok = $false } }; if ($ok) { exit 0 } else { exit 1 }"
+powershell -NoProfile -InputFormat None -Command "$u = '%CHECK_URL%'; $ok = $true; $h = @{}; if ($env:ACCESS_TOKEN) { $h['Authorization'] = 'Bearer ' + $env:ACCESS_TOKEN }; foreach ($s in 'sales.csv', 'tr_survey.csv') { try { $d = Invoke-RestMethod -Method Post -Headers $h -Uri ($u + '/api/samples/' + $s) -TimeoutSec 15; Write-Host ('  [ OK ] Veri seti yuklendi: ' + $s) -ForegroundColor Green } catch { Write-Host ('  [ X  ] ' + $s + ': ' + $_.Exception.Message) -ForegroundColor Red; $ok = $false } }; if ($ok) { exit 0 } else { exit 1 }"
 set "_DEMO_EXIT=%ERRORLEVEL%"
-if "%OPEN_BROWSER%"=="1" if "%_DEMO_EXIT%"=="0" start "" "%API_URL%/optimize"
+if "%OPEN_BROWSER%"=="1" if "%_DEMO_EXIT%"=="0" start "" "%API_URL%/"
 exit /b %_DEMO_EXIT%
 
 ::==========================================================================

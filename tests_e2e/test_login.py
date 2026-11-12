@@ -6,8 +6,8 @@ from tests_e2e.conftest import TOKEN
 
 
 def test_pages_send_you_to_the_login_and_back_again_after_signing_in(page, secured_server):
-    page.goto(secured_server + "/optimize")
-    page.wait_for_url("**/login?next=/optimize")
+    page.goto(secured_server + "/capacity")
+    page.wait_for_url("**/login?next=/capacity")
     expect(page.locator("h1")).to_have_text("Sign in")
 
     page.fill("#token", "not-the-token")
@@ -17,8 +17,8 @@ def test_pages_send_you_to_the_login_and_back_again_after_signing_in(page, secur
 
     page.fill("#token", TOKEN)
     page.click("#login-submit")
-    page.wait_for_url("**/optimize")
-    expect(page.locator(".kind-card")).to_have_count(4)  # the real page, not the login form
+    page.wait_for_url("**/capacity")
+    expect(page.locator("#cap-form input")).to_have_count(6)  # the real page, not the login form
 
 
 def test_sign_out_returns_to_the_login(page, secured_server):

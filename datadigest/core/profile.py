@@ -280,7 +280,7 @@ def _stats_frame(df: pd.DataFrame, converted: dict[str, pd.Series], kinds: dict[
     return pd.DataFrame(data, index=df.index)
 
 
-def build_profile(table: LoadedTable) -> dict[str, Any]:
+def build_profile(table: LoadedTable, stats_rows: int | None = None) -> dict[str, Any]:
     df = table.df
     rows = len(df)
     columns, converted = [], {}
@@ -302,7 +302,7 @@ def build_profile(table: LoadedTable) -> dict[str, Any]:
     from datadigest.core.stats import build_advanced, sample_frame  # stats imports this module's helpers
 
     kind_of = {c["name"]: c["kind"] for c in columns}
-    frame, sampled = sample_frame(_stats_frame(df, converted, kind_of), rows)
+    frame, sampled = sample_frame(_stats_frame(df, converted, kind_of), stats_rows)
     validity = {
         name: float(converted[name].notna().sum() / df[name].notna().sum())
         for name in df.columns

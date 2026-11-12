@@ -9,7 +9,7 @@ RUN pip wheel --no-cache-dir --wheel-dir /wheels -r requirements.txt
 # ---- runtime stage: only the installed packages and our code ---------------
 FROM python:3.13-slim AS runtime
 # Links the published image to this repository on ghcr.io.
-LABEL org.opencontainers.image.source="https://github.com/Obejarl/datadigest"       org.opencontainers.image.description="Upload a CSV: data-quality profile, plus operations-research optimizers"       org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/Obejarl/datadigest"       org.opencontainers.image.description="Upload a CSV: data-quality profile, statistics and a shareable report"       org.opencontainers.image.licenses="MIT"
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_ROOT_USER_ACTION=ignore \

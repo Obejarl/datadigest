@@ -18,7 +18,8 @@ def secured(client, monkeypatch):
 
 
 def test_off_by_default_everything_is_open(client):
-    assert client.get("/api/auth/status").json() == {"required": False, "authenticated": True}
+    status = client.get("/api/auth/status").json()
+    assert status == {"required": False, "authenticated": True, "mode": "off", "user": None}
     assert client.get("/api/datasets").status_code == 200
     assert client.post("/api/login", json={"token": "anything"}).json()["required"] is False
 
@@ -49,7 +50,7 @@ def test_pages_redirect_to_login_and_keep_the_destination(secured):
     assert r.status_code == 303
     assert r.headers["location"] == "/login?next=/datasets/abc"
     assert secured.get("/docs", follow_redirects=False).status_code == 303
-    assert secured.get("/optimize", follow_redirects=False).status_code == 303
+    assert secured.get("/capacity", follow_redirects=False).status_code == 303
 
 
 def test_probes_metrics_login_and_static_stay_open(secured):
@@ -58,7 +59,8 @@ def test_probes_metrics_login_and_static_stay_open(secured):
 
 
 def test_login_sets_an_httponly_cookie_and_it_opens_everything(secured):
-    assert secured.get("/api/auth/status").json() == {"required": True, "authenticated": False}
+    status = secured.get("/api/auth/status").json()
+    assert status == {"required": True, "authenticated": False, "mode": "token", "user": None}
     r = secured.post("/api/login", json={"token": TOKEN})
     assert r.status_code == 200
     cookie = r.headers["set-cookie"]

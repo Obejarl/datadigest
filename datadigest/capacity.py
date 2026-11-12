@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from dataclasses import asdict, dataclass
 
-from datadigest.optimize.common import AMBER, CYAN, GREEN, RED, VIOLET, chart, envelope, fmt, kpi, table
+from datadigest.envelope import AMBER, CYAN, GREEN, RED, VIOLET, chart, envelope, fmt, kpi, table
 
 KIND = "capacity"
 MAX_UTILISATION = 0.85  # beyond this, waits explode with any burst

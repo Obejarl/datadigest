@@ -9,7 +9,7 @@ from datadigest import jobqueue, metrics
 from datadigest.api.deps import get_redis
 from datadigest.config import Settings, get_settings
 from datadigest.db import get_db
-from datadigest.models import Dataset, Optimization
+from datadigest.models import Dataset
 
 router = APIRouter(tags=["health"])
 
@@ -52,10 +52,9 @@ def prometheus_metrics(
 ):
     """Prometheus scrape endpoint. Gauges that describe shared state (queue, database)
     are refreshed here, at scrape time, so they are never stale."""
-    for model, gauge in ((Dataset, metrics.DATASETS), (Optimization, metrics.OPTIMIZATIONS)):
-        counts = dict(db.execute(select(model.status, func.count()).group_by(model.status)).all())
-        for status in ("queued", "processing", "done", "failed"):
-            gauge.labels(status).set(counts.get(status, 0))
+    counts = dict(db.execute(select(Dataset.status, func.count()).group_by(Dataset.status)).all())
+    for status in ("queued", "processing", "done", "failed"):
+        metrics.DATASETS.labels(status).set(counts.get(status, 0))
     if redis is not None:
         try:
             for state, n in jobqueue.stats(redis, settings.queue_name).items():

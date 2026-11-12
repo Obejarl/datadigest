@@ -1,0 +1,32 @@
+# Optional: everything in k8s/ plus a Spark cluster that profiles big files.
+#
+#   kubectl apply -k deploy/k8s-spark/
+#
+# What changes compared with the base:
+#   - a Spark standalone cluster (one master, two workers that run the executors);
+#   - a shared volume, mounted at /data in the API, the DataDigest workers and the Spark workers,
+#     so every process sees a big file at the same path (LARGE_DATA_DIR=/data);
+#   - the DataDigest workers use the Spark image and send their work to the cluster
+#     (SPARK_MASTER=spark://spark-master:7077) instead of running Spark inside their own pod.
+#
+# Put a file on the volume, then register it from the dashboard ("Large files on the server")
+# or with POST /api/server-files/<name>.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: datadigest
+labels:
+  - pairs:
+      app.kubernetes.io/part-of: datadigest
+resources:
+  - ../../k8s
+  - large-data-pvc.yaml
+  - spark-master.yaml
+  - spark-worker.yaml
+patches:
+  - path: api-patch.yaml
+  - path: worker-patch.yaml
+images:
+  # Built with `docker build --target spark -t datadigest-spark:<tag> .`
+  # (published on release as ghcr.io/obejarl/datadigest:spark: set newName and newTag to use that).
+  - name: datadigest-spark
+    newTag: "0.8.0"

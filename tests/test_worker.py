@@ -17,11 +17,11 @@ QUEUE = "datadigest:jobs"
 def test_queue_is_fifo_and_carries_the_job_kind(redis):
     a, b = uuid.uuid4(), uuid.uuid4()
     jobqueue.enqueue(redis, QUEUE, a)
-    jobqueue.enqueue(redis, QUEUE, b, kind="optimization")
+    jobqueue.enqueue(redis, QUEUE, b, kind="export")
     assert jobqueue.depth(redis, QUEUE) == 2
     first, second = jobqueue.dequeue(redis, QUEUE, timeout=1), jobqueue.dequeue(redis, QUEUE, timeout=1)
     assert (first.kind, first.id) == ("dataset", a)
-    assert (second.kind, second.id) == ("optimization", b)
+    assert (second.kind, second.id) == ("export", b)
 
 
 def test_queue_reads_bare_ids_from_older_versions(redis):

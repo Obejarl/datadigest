@@ -229,14 +229,14 @@ def test_the_spark_home_setting_is_exported_for_the_launcher(monkeypatch, settin
     assert os.environ["SPARK_HOME"] == home
 
 
-def test_big_files_hand_a_sample_to_the_statistics(monkeypatch, tmp_path, settings):
+def test_big_files_hand_a_sample_to_the_statistics(tmp_path, settings):
     path = tmp_path / "many.csv"
-    values = np.random.default_rng(3).normal(size=600)
+    values = np.random.default_rng(3).normal(size=3000)
     path.write_text(
         "x,y\n" + "\n".join(f"{v:.4f},{i % 3}" for i, v in enumerate(values)) + "\n", encoding="utf-8"
     )
-    monkeypatch.setattr(spark_profile.advanced, "MAX_ROWS", 100)
-    adv = spark_profile.build_profile_spark(path, settings)["advanced"]
-    assert adv["sample"]["sampled"] is True and adv["sample"]["of"] == 600
-    assert 0 < adv["sample"]["rows"] <= 100
+    limited = settings.model_copy(update={"stats_max_rows": 1000})  # the STATS_MAX_ROWS setting
+    adv = spark_profile.build_profile_spark(path, limited)["advanced"]
+    assert adv["sample"]["sampled"] is True and adv["sample"]["of"] == 3000
+    assert 0 < adv["sample"]["rows"] <= 1000
     assert adv["distributions"][0]["name"] == "x"

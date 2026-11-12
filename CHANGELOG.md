@@ -3,10 +3,42 @@
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow
 [Semantic Versioning](https://semver.org/) (0.x: the API may still change between minors).
 
-## [Unreleased]
+## [0.8.0] - 2026-11-12
+
+One purpose per tool, people's data kept apart, and Spark on a cluster.
+
+### Added
+- **User accounts** (`AUTH_MODE=accounts`). People sign in with an email and a password; members see
+  only the datasets they uploaded, administrators see all of them and manage users on the new
+  `/account` page. Salted scrypt password hashes, signed session cookies that stop working the moment
+  an account is disabled, personal API tokens stored as hashes, and a first administrator from
+  `ADMIN_EMAIL` / `ADMIN_PASSWORD` or `python -m datadigest.accounts add`. Migration `0007`.
+  The shared `ACCESS_TOKEN` mode and running without sign-in work as before.
+- **Spark on a cluster.** `SPARK_MASTER` may point at a cluster; `SPARK_DRIVER_HOST`,
+  `SPARK_EXECUTOR_MEMORY` and `SPARK_CONF` configure it. `deploy/k8s-spark/` adds a Spark standalone
+  cluster, a shared volume and Spark-enabled workers to the base manifests, and a new CI job deploys
+  it to kind and profiles a file on the executors.
+- **What stands out.** The Statistics tab and the report open with a summary in plain sentences: the
+  relations that are both significant and large, then what is easy to misread (significant but tiny
+  effects, averages and correlations that depend on a few outliers). A significant result with a
+  small effect is marked amber instead of green, and a reading guide says how many tests were run.
+- `STATS_MAX_ROWS`: the number of rows the statistics are computed on (default 50,000).
+- `python -m datadigest`: migrate and serve in one command, with no other service to install.
+- The sign-in page shows its error messages in a styled box (they were unstyled).
 
 ### Changed
-- README screenshots of the optimizer, the production plan and the capacity page show the current interface.
+- The dashboard script is one file per page (`core.js`, `index.js`, `dataset.js`, `stats.js`,
+  `capacity.js`, `account.js`, `login.js`) instead of one 1,000-line file, and
+  `datadigest/core/stats.py` is a package with one module per section.
+- The smoke test profiles six samples at once instead of solving optimization examples.
+- README screenshots show the current interface.
+
+### Removed
+- **The operations-research solvers** (production planning, transportation, assignment, budget
+  allocation) moved to their own project, OptiDesk. The `/optimize` pages, `/api/optimize/*` and
+  `/api/optimizations*` are gone, and migration `0006` drops the `optimizations` table: **stored
+  optimization runs are deleted by the upgrade**. The capacity planner stays.
+- `OPT_TIME_LIMIT_SECONDS` and the `datadigest_optimizations` metric.
 
 ## [0.7.1] - 2026-11-01
 
@@ -128,6 +160,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - REST API, PostgreSQL models with Alembic migrations, a Redis queue with workers, a web
   dashboard, Docker, Docker Compose, Kubernetes manifests and CI.
 
+[0.8.0]: https://github.com/Obejarl/datadigest/releases/tag/v0.8.0
 [0.7.1]: https://github.com/Obejarl/datadigest/releases/tag/v0.7.1
 [0.7.0]: https://github.com/Obejarl/datadigest/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Obejarl/datadigest/releases/tag/v0.6.0

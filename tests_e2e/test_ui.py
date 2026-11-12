@@ -73,7 +73,7 @@ def test_delete_asks_first_and_cancel_keeps_the_dataset(page, server, tmp_path):
     row.locator('button[aria-label^="Delete"]').click()
     dialog = page.locator("dialog.modal")
     expect(dialog).to_be_visible()
-    expect(dialog).to_contain_text("optimization runs")  # tells you what else goes
+    expect(dialog).to_contain_text("its report will be removed permanently")  # says what goes
     dialog.get_by_role("button", name="Cancel").click()
     expect(dialog).to_have_count(0)
     expect(page.locator("#datasets tr", has_text="to-delete.csv")).to_have_count(2)
@@ -81,32 +81,6 @@ def test_delete_asks_first_and_cancel_keeps_the_dataset(page, server, tmp_path):
     row.locator('button[aria-label^="Delete"]').click()
     page.locator("dialog.modal .solid-danger").click()
     expect(page.locator("#datasets tr", has_text="to-delete.csv")).to_have_count(1)
-
-
-def test_optimizer_example_one_click_to_a_result_with_charts(page, server):
-    page.goto(server + "/optimize")
-    expect(page.locator(".kind-card")).to_have_count(4)
-    page.locator('.kind-card[data-kind="production"] .btn.primary').click()
-    page.wait_for_url("**/optimizations/*")
-    expect(page.locator("#result .tile").first).to_contain_text("Total profit")
-    expect(page.locator("#result")).to_contain_text("What the optimum tells you")
-    expect(page.locator("#chips")).to_contain_text("optimal")
-    expect(page.locator("#result .js-plotly-plot").first).to_be_visible()  # Plotly drew a chart
-
-
-def test_change_inputs_reopens_the_form_with_that_runs_parameters(page, server, production_run_id):
-    page.goto(f"{server}/optimizations/{production_run_id}")
-    page.locator("#change-inputs").click()
-    expect(page.locator("#config")).to_be_visible()
-    machine = page.locator("#config-fields .res-row", has_text="machine_hours")
-    expect(machine.locator("input[type=number]")).to_have_value("600")
-    expect(machine.locator("input[type=checkbox]")).to_be_checked()
-
-    machine.locator("input[type=number]").fill("900")
-    page.locator("#config-solve").click()
-    page.wait_for_url("**/optimizations/*")
-    expect(page.locator("#chips")).to_contain_text("optimal")
-    assert page.url.split("/")[-1] != production_run_id  # a new run, the old one is kept
 
 
 def test_capacity_recomputes_when_the_inputs_change(page, server):
@@ -124,7 +98,7 @@ def test_capacity_recomputes_when_the_inputs_change(page, server):
     expect(page.locator("#hpa")).to_contain_text("minReplicas: 5")
 
 
-@pytest.mark.parametrize("route", ["/", "/optimize", "/capacity"])
+@pytest.mark.parametrize("route", ["/", "/capacity"])
 def test_phone_width_has_no_horizontal_scroll(browser, server, route):
     context = browser.new_context(viewport={"width": 375, "height": 812})
     page = context.new_page()
@@ -135,10 +109,10 @@ def test_phone_width_has_no_horizontal_scroll(browser, server, route):
     assert widths[0] <= widths[1], f"{route} scrolls sideways: {widths}"
 
 
-def test_phone_width_dataset_and_result_pages(browser, server, sales_id, production_run_id):
+def test_phone_width_dataset_page_and_its_charts(browser, server, sales_id):
     context = browser.new_context(viewport={"width": 375, "height": 812})
     page = context.new_page()
-    for route in (f"/datasets/{sales_id}", f"/optimizations/{production_run_id}"):
+    for route in (f"/datasets/{sales_id}",):
         page.goto(server + route)
         page.wait_for_load_state("networkidle")
         widths = page.evaluate("[document.documentElement.scrollWidth, innerWidth]")
@@ -164,6 +138,10 @@ def test_statistics_tab_sections_and_phone_width(browser, server, sales_id):
     page = context.new_page()
     page.goto(f"{server}/datasets/{sales_id}#stats")
     expect(page.locator("#pane-stats")).to_have_class("pane active")
+    summary = page.locator(".stats-summary")
+    expect(summary.locator(".insight").first).to_contain_text("unit_price and revenue")  # plain words first
+    summary.locator("summary").click()
+    expect(summary.locator(".guide li").first).to_contain_text("Start with the effect size")
     for section, card in [
         ("Distributions", "Kolmogorov–Smirnov distribution fit"),
         ("Associations", "Categorical pairs"),

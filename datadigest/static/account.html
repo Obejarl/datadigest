@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account · DataDigest</title>
+<link rel="icon" href="/static/logo.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/style.css?v=0.8.0">
+</head>
+<body data-page="account">
+<header class="topbar">
+  <a class="brand" href="/"><img src="/static/logo.svg" alt="" width="32" height="32"><span class="name">DataDigest</span></a>
+  <span class="ver">v0.8.0</span>
+  <nav class="nav"><a href="/">Overview</a><a href="/capacity">Capacity</a><a href="/docs">API docs</a></nav>
+  <div class="pills" id="pills"></div>
+  <a class="btn primary" href="/#upload">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 16V4m0 0-4 4m4-4 4 4M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/></svg>
+    Upload CSV
+  </a>
+</header>
+
+<main>
+  <div class="phead">
+    <div>
+      <h1>Your <em>account</em></h1>
+      <p>An API token for scripts, your password and, for administrators, the people who can sign in.</p>
+    </div>
+  </div>
+
+  <section class="card" id="no-accounts" hidden>
+    <h2 class="card-t">Accounts are switched off</h2>
+    <p class="muted" style="margin-top:10px">This server lets everyone in without an account. Whoever runs it can set
+      <code>AUTH_MODE=accounts</code> to give each person their own sign-in and their own datasets.</p>
+  </section>
+
+  <div id="account" hidden>
+    <section class="card">
+      <div class="card-h"><h2 class="card-t" id="me-email">…</h2><div class="chips" id="me-chips"></div></div>
+      <p class="muted">Scripts sign in with a personal API token instead of your password. It is shown once, when you create it.</p>
+      <div class="actions" style="margin-top:14px">
+        <button class="btn primary" type="button" id="token-create">Create an API token</button>
+        <button class="btn danger" type="button" id="token-revoke" hidden>Revoke it</button>
+      </div>
+      <div id="token-box" hidden>
+        <div class="notice" style="margin-top:14px">Copy the token now: it cannot be shown again.</div>
+        <pre class="code" id="token-value"></pre>
+        <div class="actions"><button class="btn" type="button" id="token-copy">Copy</button></div>
+        <pre class="code" id="token-usage"></pre>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="card-h"><h2 class="card-t">Change your password</h2></div>
+      <form id="password-form">
+        <div class="form-grid">
+          <label class="field">Current password
+            <input type="password" id="current-password" autocomplete="current-password" required>
+          </label>
+          <label class="field">New password
+            <input type="password" id="new-password" autocomplete="new-password" minlength="10" required>
+            <span class="hint">At least 10 characters</span>
+          </label>
+        </div>
+        <div class="notice error" id="password-error" role="alert" hidden></div>
+        <div class="actions" style="margin-top:14px"><button class="btn" type="submit">Change password</button></div>
+      </form>
+    </section>
+
+    <section class="card" id="users-card" hidden>
+      <div class="card-h"><h2 class="card-t">Users</h2><span class="chip" id="users-count"></span></div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Email</th><th>Role</th><th>State</th><th>Datasets</th><th>Created</th><th><span class="sr-only">Actions</span></th></tr></thead>
+          <tbody id="users"></tbody>
+        </table>
+      </div>
+      <form id="user-form" style="margin-top:18px">
+        <div class="form-grid">
+          <label class="field">Email
+            <input type="email" id="user-email" autocomplete="off" required>
+          </label>
+          <label class="field">Password
+            <input type="password" id="user-password" autocomplete="new-password" minlength="10" required>
+            <span class="hint">At least 10 characters; they can change it after signing in</span>
+          </label>
+          <label class="field">Role
+            <select class="search" id="user-role">
+              <option value="member">Member: sees their own datasets</option>
+              <option value="admin">Administrator: sees everything, manages users</option>
+            </select>
+          </label>
+        </div>
+        <div class="notice error" id="user-error" role="alert" hidden></div>
+        <div class="actions" style="margin-top:14px"><button class="btn primary" type="submit">Add user</button></div>
+      </form>
+    </section>
+  </div>
+
+  <footer>DataDigest · FastAPI · Redis · PostgreSQL · pandas + PySpark · Kubernetes</footer>
+</main>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+<script src="/static/fx.js?v=0.8.0"></script>
+<script src="/static/core.js?v=0.8.0"></script>
+<script src="/static/account.js?v=0.8.0"></script>
+</body>
+</html>

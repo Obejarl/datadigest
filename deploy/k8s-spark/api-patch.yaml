@@ -1,0 +1,20 @@
+# The API lists the files on the shared volume and registers them; it never runs Spark itself.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api
+spec:
+  template:
+    spec:
+      containers:
+        - name: api
+          env:
+            - name: LARGE_DATA_DIR
+              value: /data
+          volumeMounts:
+            - name: large-data
+              mountPath: /data
+              readOnly: true
+      volumes:
+        - name: large-data
+          persistentVolumeClaim: { claimName: large-data }

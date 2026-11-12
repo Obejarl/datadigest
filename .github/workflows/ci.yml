@@ -33,6 +33,9 @@ jobs:
         run: |
           curl -sSL https://github.com/yannh/kubeconform/releases/download/v0.6.7/kubeconform-linux-amd64.tar.gz | tar xz
           ./kubeconform -strict -summary -ignore-filename-pattern kustomization.yaml k8s/
+          cp k8s/secret.example.yaml k8s/secret.yaml
+          kubectl kustomize deploy/k8s-spark/ | ./kubeconform -strict -summary -
+          rm k8s/secret.yaml
 
   spark:
     name: Spark engine (matches pandas)
@@ -99,7 +102,7 @@ jobs:
         run: |
           docker run -d --name api -p 8000:8000 -e DATABASE_URL=sqlite:////tmp/dd.db datadigest:ci \
             sh -c "alembic upgrade head && uvicorn datadigest.api.main:app --host 0.0.0.0 --port 8000"
-      - name: Profile a sample and solve all four optimization examples in the container
+      - name: Profile the bundled samples in the container
         run: sh scripts/smoke_test.sh http://localhost:8000 || (docker logs api; exit 1)
       - name: Build the Spark variant and profile a sample with Spark inside it
         run: |
@@ -148,7 +151,7 @@ jobs:
         run: |
           total=0; workers=0
           for id in $(docker compose ps -q worker); do
-            n=$(docker logs "$id" 2>&1 | grep -cE "(dataset|optimization) .* -> done" || true)
+            n=$(docker logs "$id" 2>&1 | grep -cE "dataset .* -> done" || true)
             echo "worker $id: $n jobs"
             total=$((total + n)); workers=$((workers + 1))
             [ "$n" -ge 1 ] || { echo "a worker did nothing"; exit 1; }
@@ -240,13 +243,13 @@ jobs:
       - name: The worker pod processed the jobs
         run: |
           kubectl -n datadigest logs deploy/worker > worker.log
-          grep -E "optimization .* -> done" worker.log
-          [ "$(grep -cE "optimization .* -> done" worker.log)" -ge 4 ]
+          grep -E "dataset .* -> done" worker.log
+          [ "$(grep -cE "dataset .* -> done" worker.log)" -ge 4 ]
       - name: The worker serves Prometheus metrics
         run: |
           kubectl -n datadigest port-forward deploy/worker 9100:9100 > pf-metrics.log 2>&1 &
           for i in $(seq 1 20); do curl -fsS localhost:9100/metrics > worker-metrics.txt 2>/dev/null && break; sleep 1; done
-          grep -E '^datadigest_jobs_total\{kind="optimization",status="done"\} [4-9]' worker-metrics.txt
+          grep -E '^datadigest_jobs_total\{kind="dataset",status="done"\} [4-9]' worker-metrics.txt
       - name: Crash recovery - a job abandoned by a dead worker is retried automatically
         run: |
           kubectl -n datadigest scale deploy/worker --replicas=0
@@ -323,3 +326,82 @@ jobs:
           kubectl -n datadigest describe pods | tail -120
           for d in api worker; do kubectl -n datadigest logs deploy/$d --tail 60 || true; done
           kubectl -n datadigest logs job/migrate --tail 60 || true
+
+  spark-cluster:
+    name: Spark cluster on Kubernetes (kind)
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - name: Create a kind cluster
+        run: |
+          curl -sSLo kind https://kind.sigs.k8s.io/dl/v0.27.0/kind-linux-amd64 && chmod +x kind
+          ./kind create cluster --name spark --wait 120s
+      - name: Build both images with the tag kustomize expects and load them into the cluster
+        run: |
+          TAG=$(sed -n 's/.*newTag: "\(.*\)".*/\1/p' k8s/kustomization.yaml)
+          docker build -t "datadigest:$TAG" .
+          docker build --target spark -t "datadigest-spark:$TAG" .
+          ./kind load docker-image "datadigest:$TAG" "datadigest-spark:$TAG" --name spark
+      - name: Apply the base manifests plus the Spark cluster
+        run: |
+          cp k8s/secret.example.yaml k8s/secret.yaml
+          kubectl apply -k deploy/k8s-spark/
+      - name: Wait for the database, the Spark cluster and the deployments
+        run: |
+          kubectl -n datadigest rollout status statefulset/postgres --timeout=180s
+          kubectl -n datadigest wait --for=condition=complete job/migrate --timeout=240s
+          kubectl -n datadigest rollout status deploy/spark-master --timeout=180s
+          kubectl -n datadigest rollout status deploy/spark-worker --timeout=180s
+          kubectl -n datadigest rollout status deploy/api --timeout=180s
+          kubectl -n datadigest rollout status deploy/worker --timeout=180s
+          kubectl -n datadigest get pods -o wide
+      - name: Both Spark workers registered with the master
+        run: |
+          for i in $(seq 1 30); do
+            alive=$(kubectl -n datadigest exec deploy/spark-master -- python -c "import json, urllib.request; print(json.load(urllib.request.urlopen('http://localhost:8080/json/'))['aliveworkers'])")
+            [ "$alive" = "2" ] && break; sleep 2
+          done
+          echo "alive Spark workers: $alive"; [ "$alive" = "2" ]
+      - name: Put a file on the shared volume
+        run: |
+          kubectl -n datadigest exec deploy/worker -- python -c "
+          import random
+          random.seed(1)
+          with open('/data/orders.csv', 'w') as f:
+              f.write('order_id,region,units,price\n')
+              for i in range(200000):
+                  f.write(f'{i},{random.choice(\"NSEW\")},{random.randint(1, 9)},{random.random() * 100:.2f}\n')
+          "
+          kubectl -n datadigest exec deploy/worker -- ls -l /data
+      - name: Profile it through the API; the work runs on the Spark executors
+        run: |
+          kubectl -n datadigest port-forward svc/api 8000:80 > port-forward.log 2>&1 &
+          for i in $(seq 1 30); do curl -fsS localhost:8000/readyz >/dev/null 2>&1 && break; sleep 2; done
+          curl -fsS localhost:8000/api/server-files | tee files.json
+          grep -q '"orders.csv"' files.json
+          # SPARK_MIN_MB decides when "auto" picks Spark; the test file is a few MB, so lower the bar.
+          kubectl -n datadigest set env deploy/worker SPARK_MIN_MB=1
+          kubectl -n datadigest rollout status deploy/worker --timeout=180s
+          dataset=$(curl -fsS -X POST localhost:8000/api/server-files/orders.csv | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+          for i in $(seq 1 90); do
+            st=$(curl -fsS "localhost:8000/api/datasets/$dataset" | python3 -c "import json,sys; print(json.load(sys.stdin)['status'])")
+            [ "$st" = "done" ] || [ "$st" = "failed" ] && break; sleep 2
+          done
+          curl -fsS "localhost:8000/api/datasets/$dataset" | tee dataset.json
+          python3 -c "import json; d=json.load(open('dataset.json')); assert d['status']=='done' and d['engine']=='spark' and d['rows']==200000, d"
+      - name: The Spark master ran the application on its executors
+        run: |
+          kubectl -n datadigest exec deploy/spark-master -- python -c "
+          import json, urllib.request
+          state = json.load(urllib.request.urlopen('http://localhost:8080/json/'))
+          apps = state['activeapps'] + state['completedapps']
+          print([(a['name'], a['cores'], a['state']) for a in apps])
+          assert any(a['name'] == 'datadigest' and a['cores'] >= 1 for a in apps), apps
+          "
+      - name: Cluster state on failure
+        if: failure()
+        run: |
+          kubectl -n datadigest get all,pvc
+          kubectl -n datadigest describe pods | tail -150
+          for d in api worker spark-master spark-worker; do kubectl -n datadigest logs deploy/$d --tail 80 || true; done

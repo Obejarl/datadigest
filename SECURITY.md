@@ -17,13 +17,14 @@ Only the latest release receives fixes.
 
 DataDigest is built to be run on your own machine or inside a trusted network:
 
-- **Authentication is optional.** Set `ACCESS_TOKEN` to require it (see the README). Without it,
+- **Authentication is optional.** Set `AUTH_MODE=accounts` (each person signs in and sees only their own
+  datasets) or `ACCESS_TOKEN` (one shared token) to require it (see the README). Without either,
   anyone who can reach the API can read, create and delete every dataset.
 - **Docker Compose binds its ports to `127.0.0.1`** on purpose. Grafana's `admin/admin` login and anonymous
   viewer are demo defaults; change them before exposing anything.
 - **Uploads are untrusted input.** Files are size-limited while streaming, parsed with pandas, never
   executed, and everything derived from them is HTML-escaped (report) or written with `textContent`
-  (dashboard). Optimization parameters are validated against the file's own columns.
+  (dashboard).
 - **`LARGE_DATA_DIR` exposes a folder to everyone who can sign in.** Files in it can be registered by
   name and profiled. Names must be one plain file name that resolves to a file directly inside the
   folder (no `..`, no sub-folders, symlinks that leave it are refused) and end in `.csv`, `.tsv`, `.txt`

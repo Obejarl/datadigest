@@ -35,3 +35,18 @@ def test_errors_are_reported_without_a_traceback(tmp_path, capsys):
     empty.write_text("only_header\n", encoding="utf-8")
     assert main(["report", str(empty)]) == 1
     assert capsys.readouterr().err.count("error:") == 2
+
+
+def test_one_command_start_migrates_then_serves(tmp_path, monkeypatch):
+    from sqlalchemy import create_engine, inspect
+
+    import datadigest.__main__ as start
+    from datadigest.config import get_settings
+
+    url = f"sqlite:///{(tmp_path / 'start.db').as_posix()}"
+    monkeypatch.setattr(get_settings(), "database_url", url)
+    served = {}
+    assert start.main(["--port", "9123"], serve=lambda app, **kw: served.update(app=app, **kw)) == 0
+    assert served == {"app": "datadigest.api.main:app", "host": "127.0.0.1", "port": 9123}
+    tables = set(inspect(create_engine(url)).get_table_names())
+    assert {"datasets", "dataset_files", "users"} <= tables and "optimizations" not in tables

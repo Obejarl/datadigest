@@ -39,4 +39,3 @@ BACKOFFS = Counter("datadigest_worker_backoffs_total", "Times a worker waited fo
 
 QUEUE = Gauge("datadigest_queue_jobs", "Jobs in the Redis queue", ["state"])  # pending / in_flight / dead
 DATASETS = Gauge("datadigest_datasets", "Datasets by status", ["status"])
-OPTIMIZATIONS = Gauge("datadigest_optimizations", "Optimization runs by status", ["status"])

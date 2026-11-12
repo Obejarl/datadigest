@@ -94,11 +94,8 @@ panels = [
         20,
     ),
     series(
-        "Datasets and optimization runs by status",
-        [
-            ("sum by (status) (datadigest_datasets)", "datasets {{status}}"),
-            ("sum by (status) (datadigest_optimizations)", "runs {{status}}"),
-        ],
+        "Datasets by status",
+        [("sum by (status) (datadigest_datasets)", "datasets {{status}}")],
         12,
         20,
     ),

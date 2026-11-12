@@ -39,11 +39,8 @@ Compose stack, and a deployment to a kind cluster. If you change the schema, add
 
 ## Conventions
 
-- Solvers (`datadigest/optimize`) and profiling (`datadigest/core`) stay pure: no database, no HTTP.
+- Profiling (`datadigest/core`) stays pure: no database, no HTTP.
 - The pandas and Spark engines return the same profile. A change to one needs the same change in the
   other; `tests/test_spark_profile.py` compares them on real files.
-- A new optimizer returns the shared result envelope (`optimize/common.py`) so the dashboard and the
-  report render it without new UI code. Tests should compare it with brute force or re-solve to verify
-  duals.
 - Anything derived from an uploaded file reaches the page through `textContent` or Jinja autoescape.
 - Keep the README and `docs/LEARNING.md` in step with behavior changes.

@@ -1,0 +1,55 @@
+# Spark workers: each offers 2 cores and 1 GB to the master and starts executors for applications.
+# Scale the cluster by changing replicas; a DataDigest worker takes at most 2 cores (SPARK_CONF
+# in worker-patch.yaml), so two replicas here serve two DataDigest workers side by side.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: spark-worker
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: spark-worker
+  template:
+    metadata:
+      labels:
+        app: spark-worker
+    spec:
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+      containers:
+        - name: worker
+          image: datadigest-spark
+          imagePullPolicy: IfNotPresent
+          command: ["sh", "-c"]
+          args:
+            - |
+              export SPARK_HOME="$(python -c 'import os, pyspark; print(os.path.dirname(pyspark.__file__))')"
+              exec "$SPARK_HOME/bin/spark-class" org.apache.spark.deploy.worker.Worker \
+                spark://spark-master:7077 --host "$POD_IP" --cores 2 --memory 1g --webui-port 8081
+          env:
+            - name: POD_IP
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+            - name: SPARK_WORKER_DIR   # executor logs and scratch space; the package folder is read-only
+              value: /tmp/spark-work
+            - name: SPARK_LOCAL_DIRS
+              value: /tmp/spark-local
+            - name: SPARK_LOG_DIR
+              value: /tmp/spark-logs
+          ports:
+            - name: ui
+              containerPort: 8081
+          readinessProbe:
+            httpGet: { path: /, port: 8081 }
+            periodSeconds: 5
+          volumeMounts:
+            - name: large-data       # the same path as in the DataDigest pods: executors open the file here
+              mountPath: /data
+              readOnly: true
+          resources:
+            requests: { cpu: 250m, memory: 1Gi }
+            limits: { memory: 2Gi }   # 1 GB of executor heap plus JVM overhead and the worker daemon
+      volumes:
+        - name: large-data
+          persistentVolumeClaim: { claimName: large-data }

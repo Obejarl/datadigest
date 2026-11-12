@@ -137,11 +137,41 @@ def main() -> int:
         "REDIS_URL must point at the redis Service",
     )
 
+    overlay = ROOT / "deploy" / "k8s-spark"
+    overlay_docs = {
+        f.name: [d for d in yaml.safe_load_all(f.read_text()) if d] for f in sorted(overlay.glob("*.yaml"))
+    }
+    for name in ("api-patch.yaml", "worker-patch.yaml"):
+        patch = overlay_docs[name][0]
+        check(patch["metadata"]["name"] in workloads, f"{name} patches a Deployment that does not exist")
+        for c in patch["spec"]["template"]["spec"]["containers"]:
+            strange = {e["name"] for e in c.get("env", [])} - settings_fields
+            check(not strange, f"{name}: env vars the app never reads: {sorted(strange)}")
+    spark = {d["metadata"]["name"]: d for d in overlay_docs["spark-master.yaml"]}
+    selector = next(d for d in overlay_docs["spark-master.yaml"] if d["kind"] == "Service")["spec"][
+        "selector"
+    ]
+    master = next(d for d in overlay_docs["spark-master.yaml"] if d["kind"] == "Deployment")
+    check(
+        selector.items() <= master["spec"]["template"]["metadata"]["labels"].items(),
+        "Service/spark-master does not select the master pods",
+    )
+    check("spark-master" in spark, "the Spark overlay has no master")
+    worker_env = overlay_docs["worker-patch.yaml"][0]["spec"]["template"]["spec"]["containers"][0]["env"]
+    master_url = next(e["value"] for e in worker_env if e["name"] == "SPARK_MASTER")
+    check(master_url == "spark://spark-master:7077", "SPARK_MASTER must point at the spark-master Service")
+    claims = {d["metadata"]["name"] for d in overlay_docs["large-data-pvc.yaml"]}
+    for name, docs_in_file in overlay_docs.items():
+        for d in docs_in_file:
+            for volume in (d.get("spec", {}).get("template", {}).get("spec", {}) or {}).get("volumes", []):
+                claim = volume.get("persistentVolumeClaim", {}).get("claimName")
+                check(claim in claims, f"{name}: volume uses a claim that is not defined: {claim}")
+
     compose = yaml.safe_load((ROOT / "docker-compose.yml").read_text())
     for name in ("postgres", "redis", "migrate", "api", "worker"):
         check(name in compose["services"], f"docker-compose is missing service {name}")
 
-    print(f"checked {len(docs)} Kubernetes objects and docker-compose.yml")
+    print(f"checked {len(docs)} Kubernetes objects, the Spark overlay and docker-compose.yml")
     for e in errors:
         print("ERROR:", e)
     return 1 if errors else 0

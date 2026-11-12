@@ -30,7 +30,7 @@ def connect(url: str) -> Redis:
 
 
 class Job(NamedTuple):
-    kind: str  # "dataset" (profile a file) or "optimization" (run a solver)
+    kind: str  # "dataset" (profile a file); the worker maps each kind to a handler
     id: uuid.UUID
     raw: str = ""  # the queue entry, needed to ack it
     attempts: int = 1

@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from datadigest.config import Settings
 from datadigest.core import stats
 from datadigest.core.loader import load_csv
 from datadigest.core.profile import build_profile
@@ -277,18 +278,29 @@ def test_an_outlier_can_manufacture_a_correlation(rng):
 
 def test_sampling_is_capped_and_reproducible():
     big = pd.DataFrame({"x": np.arange(stats.MAX_ROWS + 5_000, dtype=float)})
-    sample, sampled = stats.sample_frame(big, len(big))
-    again, _ = stats.sample_frame(big, len(big))
+    sample, sampled = stats.sample_frame(big)
+    again, _ = stats.sample_frame(big)
     assert sampled and len(sample) == stats.MAX_ROWS and sample.equals(again)
-    small, flag = stats.sample_frame(big.iloc[:100], 100)
+    small, flag = stats.sample_frame(big.iloc[:100])
     assert not flag and len(small) == 100
+    assert len(stats.sample_frame(big, 2_000)[0]) == 2_000  # the limit is a setting (STATS_MAX_ROWS)
+
+
+def test_the_sample_size_setting_reaches_the_profile():
+    raw = ("x,g\n" + "\n".join(f"{i},{i % 4}" for i in range(2_500)) + "\n").encode()
+    sample = build_profile(load_csv(raw), stats_rows=1_000)["advanced"]["sample"]
+    assert sample == {"rows": 1_000, "of": 2_500, "sampled": True}
+    assert build_profile(load_csv(raw))["advanced"]["sample"]["sampled"] is False
+    with pytest.raises(ValueError):
+        Settings(stats_max_rows=10)  # too few rows for the tests to mean anything
 
 
 def test_the_profile_carries_every_section_and_is_strict_json():
     profile = build_profile(load_csv((SAMPLES / "sales.csv").read_bytes()))
     adv = profile["advanced"]
     json.dumps(profile, allow_nan=False)  # no NaN or Infinity anywhere
-    assert set(adv) == {"sample", "distributions", "associations", "consistency", "sensitivity", "notes"}
+    sections = {"sample", "highlights", "tests_run", "distributions", "associations", "consistency"}
+    assert set(adv) == sections | {"sensitivity", "notes"}
     assert set(adv["associations"]) == {"numeric", "categorical", "ordinal", "by_group"}
     assert adv["sample"] == {"rows": 1005, "of": 1005, "sampled": False}
     names = {d["name"] for d in adv["distributions"]}
@@ -317,3 +329,38 @@ def test_the_report_and_api_expose_the_statistics(client):
     assert "<h2>Statistics</h2>" in html and "Cramér" in html and "Sensitivity to outliers" in html
     profile = build_profile(load_csv((SAMPLES / "sales.csv").read_bytes()))
     assert "Consistency: grade" in render_report(profile, "sales")
+    assert "What stands out" in html and "does not say that one causes the other" in html
+
+
+def test_highlights_name_the_strong_relations_and_the_traps():
+    adv = build_profile(load_csv((SAMPLES / "sales.csv").read_bytes()))["advanced"]
+    kinds = [h["kind"] for h in adv["highlights"]]
+    text = " ".join(h["text"] for h in adv["highlights"])
+    assert kinds[0] == "finding" and "unit_price and revenue" in adv["highlights"][0]["text"]
+    assert "not a cause" in text  # a relation was reported, so the warning comes with it
+    assert "depends on a few extreme values" in text and "unit_price" in text
+    assert "change a lot once the outliers are left out" in text
+    assert adv["tests_run"] == sum(
+        1 for rows in adv["associations"].values() for r in rows if r["p_adj"] is not None
+    )
+
+
+def test_significant_but_tiny_effects_are_called_out_not_celebrated():
+    # 20,000 rows and a correlation of about 0.03: the test passes, the effect is negligible.
+    rng = np.random.default_rng(11)
+    x = rng.normal(size=20_000)
+    frame = pd.DataFrame({"x": x, "y": 0.03 * x + rng.normal(size=20_000)})
+    raw = (frame.to_csv(index=False)).encode()
+    adv = build_profile(load_csv(raw))["advanced"]
+    pair = adv["associations"]["numeric"][0]
+    assert pair["p_adj"] < 0.05 and pair["strength"] == "negligible"
+    assert [h["kind"] for h in adv["highlights"]][:2] == ["info", "caution"]
+    assert "No strong relation" in adv["highlights"][0]["text"]
+    assert "small in size" in adv["highlights"][1]["text"]
+    assert not any("not a cause" in h["text"] for h in adv["highlights"])  # nothing was claimed
+
+
+def test_highlights_survive_files_with_nothing_to_say():
+    tiny = build_profile(load_csv(b"a,b\n1,x\n2,y\n3,x\n"))["advanced"]
+    assert tiny["tests_run"] == 0
+    assert tiny["highlights"][0] == {"kind": "info", "text": "No strong relation between columns was found."}

@@ -127,6 +127,14 @@ def get_session(settings: Settings | None = None):
     )
     if settings.spark_driver_memory:
         builder = builder.config("spark.driver.memory", settings.spark_driver_memory)
+    if settings.spark_executor_memory:
+        builder = builder.config("spark.executor.memory", settings.spark_executor_memory)
+    if settings.spark_driver_host:
+        # Executors call back to this process: advertise an address they can reach, listen on all.
+        builder = builder.config("spark.driver.host", settings.spark_driver_host)
+        builder = builder.config("spark.driver.bindAddress", "0.0.0.0")
+    for key, value in settings.spark_conf_pairs:
+        builder = builder.config(key, value)
     try:
         session = builder.getOrCreate()
     except Exception as exc:  # py4j and launcher errors are not worth exposing as types
@@ -529,13 +537,14 @@ def _preview(df, names: list[str], columns: list[str]) -> dict[str, Any]:
     return {"columns": names, "rows": rows}
 
 
-def _advanced(cleaned, columns, display, stats, kinds, profile_columns, datetimes, rows) -> dict[str, Any]:
-    """Collect at most MAX_ROWS rows (all of a small file, in file order) and run the shared statistics."""
+def _advanced(
+    cleaned, columns, display, stats, kinds, profile_columns, datetimes, rows, limit
+) -> dict[str, Any]:
+    """Collect at most `limit` rows (all of a small file, in file order) and run the shared statistics."""
     import numpy as np
     import pandas as pd
     from pyspark.sql import functions as F
 
-    limit = advanced.MAX_ROWS
     sampled = rows > limit
     sample = cleaned
     if sampled:
@@ -646,7 +655,9 @@ def build_profile_spark(path: Path, settings: Settings | None = None) -> dict[st
         profile_columns = _columns(
             columns, display, stats, kinds, numeric, categorical, datetimes, texts, rows
         )
-        advanced_stats = _advanced(cleaned, columns, display, stats, kinds, profile_columns, datetimes, rows)
+        advanced_stats = _advanced(
+            cleaned, columns, display, stats, kinds, profile_columns, datetimes, rows, settings.stats_max_rows
+        )
     finally:
         cleaned.unpersist()
 

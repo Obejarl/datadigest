@@ -74,3 +74,19 @@ def test_the_cli_engine_flag(csv, capsys):
 
 def test_blank_optional_paths_mean_off():
     assert Settings(spark_home="  ").spark_home is None
+
+
+def test_cluster_settings_are_parsed_and_checked():
+    cluster = Settings(
+        spark_master="spark://spark-master:7077",
+        spark_driver_host=" 10.1.2.3 ",
+        spark_conf="spark.cores.max=2,\n spark.executor.cores = 2 ,",
+    )
+    assert cluster.spark_conf_pairs == [("spark.cores.max", "2"), ("spark.executor.cores", "2")]
+    assert cluster.spark_driver_host == "10.1.2.3"
+    assert not cluster.spark_is_local
+    assert Settings().spark_is_local and Settings().spark_conf_pairs == []
+    assert not Settings(spark_master="local-cluster[2,1,1024]").spark_is_local
+    for bad in ("cores=2", "spark.cores.max", "executor.memory=1g"):
+        with pytest.raises(ValueError):
+            Settings(spark_conf=bad)

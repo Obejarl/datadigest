@@ -11,7 +11,6 @@ from datadigest.config import Settings, get_settings
 from datadigest.core import engines, spark_profile
 from datadigest.core.profile import build_profile
 from datadigest.models import Dataset, Status
-from datadigest.optimize import KINDS
 from tests.conftest import SAMPLES
 
 CSV = (SAMPLES / "sales.csv").read_bytes()
@@ -112,17 +111,6 @@ def test_a_symlink_pointing_outside_the_directory_is_refused(data_dir):
 def test_unknown_files_are_404(client, data_dir):
     assert _register(client, "missing.csv").status_code == 404
     assert _register(client, "run.exe").status_code == 404
-
-
-def test_optimizers_need_an_uploaded_file(client, data_dir):
-    (data_dir / "orders.csv").write_bytes(CSV)
-    dataset_id = _register(client, "orders.csv").json()["id"]
-    response = client.post(
-        "/api/optimizations",
-        json={"dataset_id": dataset_id, "kind": "production", "params": KINDS["production"].example},
-    )
-    assert response.status_code == 409
-    assert "uploaded file" in response.json()["detail"]
 
 
 def test_a_file_that_disappears_makes_the_job_fail_cleanly(client, data_dir):

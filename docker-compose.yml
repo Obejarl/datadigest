@@ -8,6 +8,10 @@ x-app: &app
     DATABASE_URL: postgresql+psycopg://datadigest:datadigest@postgres:5432/datadigest
     REDIS_URL: redis://redis:6379/0
     ACCESS_TOKEN: ${ACCESS_TOKEN:-}   # optional: export it (or put it in .env) to require a login
+    AUTH_MODE: ${AUTH_MODE:-}         # optional: "accounts" gives everyone their own sign-in
+    SECRET_KEY: ${SECRET_KEY:-}
+    ADMIN_EMAIL: ${ADMIN_EMAIL:-}
+    ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
 
 services:
   postgres:

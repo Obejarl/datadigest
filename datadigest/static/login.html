@@ -8,25 +8,37 @@
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;500;600;700&display=swap">
-<link rel="stylesheet" href="/static/style.css?v=0.7.1">
+<link rel="stylesheet" href="/static/style.css?v=0.8.0">
 </head>
 <body data-page="login">
 <header class="topbar">
   <a class="brand" href="/"><img src="/static/logo.svg" alt="" width="32" height="32"><span class="name">DataDigest</span></a>
 </header>
 <main class="login-wrap">
-  <form class="card login" id="login-form" autocomplete="off">
+  <form class="card login" id="login-form">
     <h1>Sign in</h1>
-    <p class="muted">This DataDigest needs an access token. It is set by whoever runs the server (<code>ACCESS_TOKEN</code>).</p>
-    <label class="field">Access token
-      <input type="password" id="token" name="token" autocomplete="current-password" required autofocus>
-    </label>
+    <div id="token-fields" class="login-fields">
+      <p class="muted">This DataDigest needs an access token. It is set by whoever runs the server (<code>ACCESS_TOKEN</code>).</p>
+      <label class="field">Access token
+        <input type="password" id="token" name="token" autocomplete="current-password" required>
+      </label>
+    </div>
+    <div id="account-fields" class="login-fields" hidden>
+      <p class="muted">Sign in with the account your administrator created for you.</p>
+      <label class="field">Email
+        <input type="email" id="email" name="email" autocomplete="username" required disabled>
+      </label>
+      <label class="field">Password
+        <input type="password" id="password" name="password" autocomplete="current-password" required disabled>
+      </label>
+    </div>
     <div class="notice error" id="login-error" role="alert" hidden></div>
     <button class="btn primary" type="submit" id="login-submit">Sign in</button>
   </form>
 </main>
 <div class="toasts" id="toasts" aria-live="polite"></div>
-<script src="/static/fx.js?v=0.7.1"></script>
-<script src="/static/app.js?v=0.7.1"></script>
+<script src="/static/fx.js?v=0.8.0"></script>
+<script src="/static/core.js?v=0.8.0"></script>
+<script src="/static/login.js?v=0.8.0"></script>
 </body>
 </html>

@@ -61,6 +61,9 @@
   dl { display:grid; grid-template-columns:auto 1fr; gap:4px 14px; margin:12px 0 0; font-size:13.5px; }
   dt { color:var(--sub); } dd { margin:0; font-family:var(--mono); overflow-wrap:anywhere; }
   .chart { min-height:300px; }
+  .highlights { list-style:none; padding:0; margin:12px 0; display:grid; gap:8px; }
+  .highlights li { padding:10px 14px; border-radius:10px; border:1px solid var(--edge2); border-left:3px solid #22d3ee; font-size:14px; }
+  .highlights li.finding { border-left-color:#10e39a; } .highlights li.caution { border-left-color:#ffc857; }
   footer { margin-top:48px; font-size:12.5px; color:var(--dim); text-align:center; }
   @media (max-width:760px) { .bento { grid-template-columns:1fr 1fr; } .tile.span2 { grid-column:1/-1; } .col-grid { grid-template-columns:1fr; } }
   @media print { body::before { display:none; } .card, .tile { box-shadow:none; break-inside:avoid; } }
@@ -127,6 +130,14 @@
   {% if adv %}
   <h2>Statistics</h2>
   <p class="muted">{% if adv.sample.sampled %}Computed on a random sample of {{ adv.sample.rows }} of {{ adv.sample.of }} rows. {% endif %}p-values are adjusted for the number of tests (Benjamini-Hochberg); read effect sizes next to them.</p>
+  {% if adv.highlights %}
+  <h3>What stands out</h3>
+  <ul class="highlights">
+    {% for h in adv.highlights %}<li class="{{ h.kind }}">{{ h.text }}</li>
+    {% endfor %}
+  </ul>
+  <p class="muted">How to read the tables: start with the effect size, then the p-value. {{ adv.tests_run }} tests were run; a relation between two columns does not say that one causes the other, and these statistics explore the data rather than prove a claim.</p>
+  {% endif %}
 
   <h3>Location, spread and shape</h3>
   <div class="card table-wrap" style="padding:0"><table>

@@ -34,4 +34,4 @@ def profile_path(path: Path, engine: str = "auto", settings: Settings | None = N
         return build_profile_spark(path, settings)
     if path.suffix.lower() == PARQUET_SUFFIX:
         raise LoadError("Parquet files need the Spark engine")
-    return build_profile(load_csv(path.read_bytes(), max_rows=settings.max_rows))
+    return build_profile(load_csv(path.read_bytes(), max_rows=settings.max_rows), settings.stats_max_rows)

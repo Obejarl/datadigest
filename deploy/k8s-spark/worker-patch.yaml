@@ -1,0 +1,38 @@
+# The DataDigest worker becomes a Spark driver: it plans the job and collects the small results,
+# while the executors on the Spark workers read the file and do the heavy aggregation.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  template:
+    spec:
+      securityContext:
+        fsGroup: 1000   # lets the app user write to the shared volume on storage that honours it
+      containers:
+        - name: worker
+          image: datadigest-spark
+          env:
+            - name: LARGE_DATA_DIR
+              value: /data
+            - name: SPARK_MASTER
+              value: spark://spark-master:7077
+            - name: SPARK_DRIVER_HOST   # executors connect back to this pod
+              valueFrom: { fieldRef: { fieldPath: status.podIP } }
+            - name: SPARK_DRIVER_MEMORY
+              value: 1g
+            - name: SPARK_EXECUTOR_MEMORY
+              value: 1g
+            # Without a cap the first worker would take every core of the cluster and a second
+            # worker's jobs would wait for it.
+            - name: SPARK_CONF
+              value: spark.cores.max=2,spark.executor.cores=2
+          volumeMounts:
+            - name: large-data
+              mountPath: /data
+          resources:
+            requests: { cpu: 200m, memory: 768Mi }
+            limits: { cpu: "1", memory: 2Gi }   # a JVM (the driver) next to the Python process
+      volumes:
+        - name: large-data
+          persistentVolumeClaim: { claimName: large-data }

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, sessionmaker, undefer
 
 from datadigest import jobqueue
+from datadigest.api.auth import Identity, current_identity, visible
 from datadigest.api.deps import get_redis
 from datadigest.api.schemas import DatasetOut
 from datadigest.config import Settings, get_settings
@@ -33,8 +34,11 @@ async def _read_limited(upload: UploadFile, limit: int) -> bytes:
     return bytes(data)
 
 
-def _get(db: Session, dataset_id: uuid.UUID, with_profile: bool = False) -> Dataset:
-    query = select(Dataset).where(Dataset.id == dataset_id)
+def _get(
+    db: Session, dataset_id: uuid.UUID, identity: Identity | None, with_profile: bool = False
+) -> Dataset:
+    # Someone else's dataset is reported as missing, not as forbidden: ids are not confirmed to exist.
+    query = visible(select(Dataset).where(Dataset.id == dataset_id), identity)
     if with_profile:
         query = query.options(undefer(Dataset.profile))
     dataset = db.scalars(query).first()
@@ -57,8 +61,13 @@ def schedule(dataset_id: uuid.UUID, background: BackgroundTasks, factory, redis,
         background.add_task(process_dataset, dataset_id, factory)
 
 
-def create_dataset(db: Session, filename: str, content: bytes) -> Dataset:
-    dataset = Dataset(name=filename.rsplit(".", 1)[0][:255], filename=filename[:255], size_bytes=len(content))
+def create_dataset(db: Session, filename: str, content: bytes, identity: Identity | None) -> Dataset:
+    dataset = Dataset(
+        name=filename.rsplit(".", 1)[0][:255],
+        filename=filename[:255],
+        size_bytes=len(content),
+        owner_id=identity.user_id if identity else None,
+    )
     dataset.file = DatasetFile(content=content)
     db.add(dataset)
     db.commit()
@@ -69,6 +78,7 @@ def create_dataset(db: Session, filename: str, content: bytes) -> Dataset:
 async def upload_dataset(
     file: UploadFile,
     background: BackgroundTasks,
+    identity: Identity | None = Depends(current_identity),
     db: Session = Depends(get_db),
     factory: sessionmaker = Depends(get_session_factory),
     redis: Redis | None = Depends(get_redis),
@@ -81,35 +91,55 @@ async def upload_dataset(
     if not content.strip():
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "File is empty")
 
-    dataset = create_dataset(db, filename, content)
+    dataset = create_dataset(db, filename, content, identity)
     schedule(dataset.id, background, factory, redis, settings)
     return dataset
 
 
 @router.get("", response_model=list[DatasetOut])
-def list_datasets(limit: int = 50, db: Session = Depends(get_db)):
-    query = select(Dataset).order_by(Dataset.created_at.desc()).limit(min(max(limit, 1), 200))
+def list_datasets(
+    limit: int = 50, identity: Identity | None = Depends(current_identity), db: Session = Depends(get_db)
+):
+    query = visible(select(Dataset), identity).order_by(Dataset.created_at.desc())
+    query = query.limit(min(max(limit, 1), 200))
     return db.scalars(query).all()
 
 
 @router.get("/{dataset_id}", response_model=DatasetOut)
-def get_dataset(dataset_id: uuid.UUID, db: Session = Depends(get_db)):
-    return _get(db, dataset_id)
+def get_dataset(
+    dataset_id: uuid.UUID,
+    identity: Identity | None = Depends(current_identity),
+    db: Session = Depends(get_db),
+):
+    return _get(db, dataset_id, identity)
 
 
 @router.get("/{dataset_id}/profile")
-def get_profile(dataset_id: uuid.UUID, db: Session = Depends(get_db)) -> dict:
-    return _profile_or_409(_get(db, dataset_id, with_profile=True))
+def get_profile(
+    dataset_id: uuid.UUID,
+    identity: Identity | None = Depends(current_identity),
+    db: Session = Depends(get_db),
+) -> dict:
+    return _profile_or_409(_get(db, dataset_id, identity, with_profile=True))
 
 
 @router.get("/{dataset_id}/charts")
-def get_charts(dataset_id: uuid.UUID, db: Session = Depends(get_db)) -> list[dict]:
-    return build_charts(_profile_or_409(_get(db, dataset_id, with_profile=True)))
+def get_charts(
+    dataset_id: uuid.UUID,
+    identity: Identity | None = Depends(current_identity),
+    db: Session = Depends(get_db),
+) -> list[dict]:
+    return build_charts(_profile_or_409(_get(db, dataset_id, identity, with_profile=True)))
 
 
 @router.get("/{dataset_id}/report", response_class=HTMLResponse)
-def get_report(dataset_id: uuid.UUID, download: bool = False, db: Session = Depends(get_db)):
-    dataset = _get(db, dataset_id, with_profile=True)
+def get_report(
+    dataset_id: uuid.UUID,
+    download: bool = False,
+    identity: Identity | None = Depends(current_identity),
+    db: Session = Depends(get_db),
+):
+    dataset = _get(db, dataset_id, identity, with_profile=True)
     html = render_report(_profile_or_409(dataset), title=dataset.filename)
     headers = {}
     if download:
@@ -122,13 +152,14 @@ def get_report(dataset_id: uuid.UUID, download: bool = False, db: Session = Depe
 def reprocess_dataset(
     dataset_id: uuid.UUID,
     background: BackgroundTasks,
+    identity: Identity | None = Depends(current_identity),
     db: Session = Depends(get_db),
     factory: sessionmaker = Depends(get_session_factory),
     redis: Redis | None = Depends(get_redis),
     settings: Settings = Depends(get_settings),
 ):
     """Run the analysis again: after a failure, or to pick up a newer profiler version."""
-    dataset = _get(db, dataset_id)
+    dataset = _get(db, dataset_id, identity)
     if dataset.status in (Status.QUEUED, Status.PROCESSING):
         raise HTTPException(status.HTTP_409_CONFLICT, f"Dataset is already {dataset.status}")
     dataset.status, dataset.error = Status.QUEUED, None
@@ -139,7 +170,11 @@ def reprocess_dataset(
 
 
 @router.delete("/{dataset_id}", status_code=status.HTTP_204_NO_CONTENT)
-def delete_dataset(dataset_id: uuid.UUID, db: Session = Depends(get_db)):
-    db.delete(_get(db, dataset_id))
+def delete_dataset(
+    dataset_id: uuid.UUID,
+    identity: Identity | None = Depends(current_identity),
+    db: Session = Depends(get_db),
+):
+    db.delete(_get(db, dataset_id, identity))
     db.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)

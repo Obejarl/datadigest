@@ -124,9 +124,9 @@ Son çare olarak [`cleanup.py`](../datadigest/cleanup.py) içindeki `fail_stuck`
 **Dene:**
 
 ```bash
-docker build -t datadigest:0.7.1 .
+docker build -t datadigest:0.8.0 .
 docker image ls datadigest
-docker history datadigest:0.7.1
+docker history datadigest:0.8.0
 ```
 
 Sonra kodda bir satır değiştirip tekrar build et. Hangi katmanların önbellekten geldiğine bak.
@@ -223,7 +223,7 @@ Her komutta neye bakacağın:
    - manifest çapraz kontrolü,
    - `kubeconform` (Kubernetes şema doğrulaması).
 2. **integration:** GitHub'ın açtığı **gerçek** PostgreSQL ve Redis container'larına karşı uçtan uca test. Önce migration'lar yukarı, aşağı, tekrar yukarı çalıştırılır.
-3. **docker:** Image'ı build eder, container'ı başlatır, [`smoke_test.sh`](../scripts/smoke_test.sh) ile profil ve dört optimizasyonu container içinde çözer.
+3. **docker:** Image'ı build eder, container'ı başlatır, [`smoke_test.sh`](../scripts/smoke_test.sh) ile örnek dosyaları container içinde profiller.
 4. **compose:** Tüm sistemi `docker compose up` ile kaldırır ve duman testini kuyruk üzerinden koşar. İşlerin iki worker container'ına da dağıldığını kontrol eder.
 5. **kubernetes:** [kind](https://kind.sigs.k8s.io/) ile GitHub'ın makinesinde **gerçek bir Kubernetes kümesi** kurar. İmajı yükleyip `kubectl apply -k k8s/` yapar, ardından şunları kontrol eder:
    - StatefulSet, migration Job'ı ve Deployment'lar hazır mı,
@@ -251,51 +251,14 @@ Her komutta neye bakacağın:
 
 ---
 
-## 9. Yöneylem araştırması (optimizasyon)
+## 9. Kapasite planlama: kuyruk teorisi
 
-Profilleme "veride ne var?" sorusunu cevaplar. Optimizasyon ise "bu veriyle en iyi karar ne?" sorusunu. Dört model de [`datadigest/optimize/`](../datadigest/optimize/) altında saf fonksiyonlar olarak duruyor: DB ve HTTP bilmiyorlar.
+Profilleme "veride ne var?" sorusunu cevaplar. Bu bölüm sistemin kendisiyle ilgili bir soruyu cevaplıyor: "kaç worker gerekir?"
 
-### Doğrusal programlama (LP) ve gölge fiyat
-[`production.py`](../datadigest/optimize/production.py), üretim planını bir LP olarak kuruyor:
-
-- **Amaç:** max Σ kâr·miktar.
-- **Kısıtlar:** her kaynak için Σ kullanım·miktar ≤ kapasite.
-
-LP çözülünce her kısıtın bir **dual** değeri de gelir. Buna **gölge fiyat** denir: o kaynaktan bir birim daha olsaydı kâr ne kadar artardı? "Makine saati darboğaz, 1 saat daha 21 TL kazandırır" cümlesi buradan çıkıyor. Test, bu sayının doğruluğunu kapasiteyi 1 artırıp yeniden çözerek kontrol ediyor.
-
-**Neden gölge fiyat her şey değil?** Gölge fiyat sadece küçük değişiklikler için geçerli. Makineyi %50 artırınca bu sefer işçilik bitiyor; bunu what-if eğrisi gösteriyor. Uygulama bu durumda kullanıcıyı açıkça uyarıyor.
-
-### Tam sayılı programlama (MIP) ve LP gevşetmesi
-"Yarım sandalye üretilemez" → değişkenler tam sayı olmak zorunda. Bu durumda problem MIP'e dönüşür: çözmesi zordur ve dual değer vermez. Uygulama bu yüzden ayrıca **LP gevşetmesini** (tam sayı şartını kaldırılmış hali) çözüyor ve ondan iki şey elde ediyor:
-- gölge fiyatları,
-- teorik üst sınırı.
-
-İkisi arasındaki farka **integrality gap** deniyor. "Tam sayı plan, teorik optimumun %0,04 yakınında" cümlesi bu farktan geliyor. Bütçe seçimi ([`knapsack.py`](../datadigest/optimize/knapsack.py)) de aynı fikrin 0/1 hali.
-
-### Ulaştırma problemi ve dual fiyatlar
-[`transport.py`](../datadigest/optimize/transport.py) klasik ulaştırma tablosunu okuyor: arz kolonu, talep satırı ve birim maliyetler. Dual değerler iki soruyu cevaplıyor:
-- "Ankara'ya 1 birim daha arz 32 TL tasarruf ettirir."
-- "Trabzon'a 1 birim daha talep 105 TL ekler."
-
-Trabzon'daki 105 tam olarak boş kapasitesi olan İstanbul'dan Trabzon'a gönderim maliyeti. Ekonomik yorumu bu.
-
-### Atama problemi: Macar algoritması
-n kişiyi n işe atamanın n! yolu var; 10 kişide 3,6 milyon. Macar algoritması ([`assignment.py`](../datadigest/optimize/assignment.py), SciPy'nin `linear_sum_assignment`'ı) bunu O(n³)'te kesin olarak çözer. İlginç içgörü: takım optimumu için bazı kişiler en iyi oldukları işi yapmıyor.
-
-### Optimum ile sezgisel yöntem farkı
-Her sonuç, insanların gerçekte kullandığı basit kuralla karşılaştırılıyor:
-
-| Problem | Basit kural |
-|---|---|
-| Üretim planı | En yüksek marjlı ürün önce |
-| Ulaştırma | En ucuz rota önce |
-| Atama | En iyi eşleşme önce |
-| Bütçe seçimi | En iyi değer/maliyet önce |
-
-Fark, optimizasyonun neden işe yaradığının somut kanıtı: örneklerde %5 ile %23 arası.
+> Üretim planı, ulaştırma, atama ve bütçe seçimi çözücüleri (LP, MIP, Macar algoritması) eskiden bu projedeydi. 0.8.0'da kendi projelerine (OptiDesk) taşındılar. Gerekçe: bir araç tek bir işi iyi yapmalı. "Bu araç ne işe yarar?" sorusunun tek cümlelik cevabı yoksa kapsam dağılmış demektir.
 
 ### Kuyruk teorisi: M/M/c ve Kubernetes
-[`capacity.py`](../datadigest/optimize/capacity.py) DataDigest'in kendi worker'larını boyutlandırıyor. Kullanılan büyüklükler:
+[`capacity.py`](../datadigest/capacity.py) DataDigest'in kendi worker'larını boyutlandırıyor. Kullanılan büyüklükler:
 - λ: dakikadaki iş sayısı,
 - μ: bir worker'ın saniyedeki iş hızı,
 - c: worker sayısı.
@@ -311,10 +274,7 @@ Fark, optimizasyonun neden işe yaradığının somut kanıtı: örneklerde %5 i
   Sayfa bunları kopyalanabilir YAML olarak veriyor.
 - **Varsayımlar:** M/M/c rastgele gelişler ve üstel dağılımlı servis süreleri varsayar. Ölçülen değişkenlik katsayısı (CV) 1'den büyükse gerçek beklemeler daha uzun olabilir; uygulama bunu da söylüyor.
 
-**Dene:**
-1. `/optimize`'da dört örneği çalıştır.
-2. Üretim planında "Change inputs" ile makine kapasitesini değiştir ve gölge fiyatın nasıl değiştiğine bak.
-3. `/capacity`'de geliş hızını artırıp worker sayısının nasıl sıçradığını izle.
+**Dene:** `/capacity`'de geliş hızını artırıp worker sayısının nasıl sıçradığını izle.
 
 ---
 
@@ -361,14 +321,27 @@ CI bunu gerçekten deniyor: worker'lar kapalıyken bir iş kuyruğa atılıyor, 
 Metrik toplamak izlemenin yarısı; öbür yarısı "bir şey ters giderse biri haberdar olsun". [`alerts.yml`](../deploy/prometheus/alerts.yml) 9 kural tanımlar. Örnek: `sum(datadigest_queue_jobs{state="dead"}) > 0` için `for: 1m`. **`for`** bir koşulun belirli süre sürekli doğru kalmasını bekler, böylece kısa bir dalgalanma alarm üretmez. Her kural [`alerts_test.yml`](../deploy/prometheus/alerts_test.yml) içinde sentetik metriklerle test edilir: "kuyruk 80 olur ve 8 dakika kalırsa alarm çalmalı; 2 dakikalık bir tepe çalmamalı".
 
 ### Kimlik doğrulama: küçük ama doğru yapmak
-[`auth.py`](../datadigest/api/auth.py) isteğe bağlı tek bir paylaşılan anahtar (`ACCESS_TOKEN`) getirir. Her satırın bir nedeni var:
+[`auth.py`](../datadigest/api/auth.py) üç kipte çalışır: kapalı, tek bir paylaşılan anahtar (`ACCESS_TOKEN`) ve kullanıcı hesapları (`AUTH_MODE=accounts`). Önce paylaşılan anahtar kipi; her satırın bir nedeni var:
 - **Çerez, anahtarın kendisini değil HMAC'ini taşır.** Çerez çalınsa bile anahtar ortaya çıkmaz.
 - **`HttpOnly`:** sayfadaki JavaScript çerezi okuyamaz (XSS olsa bile çalınmaz).
 - **`SameSite=Lax`:** başka bir sitedeki form, tarayıcıya bu çerezi POST/DELETE ile göndertemez. Bu, durum değiştiren çağrıları CSRF'ten korur.
 - **`hmac.compare_digest`:** karşılaştırma süresi, kaç karakterin doğru olduğuna bağlı değildir (zamanlama saldırısı).
 - **Deneme sınırı:** dakikada 5 yanlış denemeden sonra doğru anahtar bile 429 alır.
-- **Açık yönlendirme (open redirect) koruması:** giriş sonrası `?next=` ile yönlendirirken `//evil.example` ve `/\evil.example` reddedilir ([`safeNext`](../datadigest/static/app.js)). Aksi halde saldırgan, girişten sonra kurbanı kendi sitesine gönderen bir bağlantı hazırlayabilir. Bunun tarayıcı testi var.
+- **Açık yönlendirme (open redirect) koruması:** giriş sonrası `?next=` ile yönlendirirken `//evil.example` ve `/\evil.example` reddedilir ([`safeNext`](../datadigest/static/login.js)). Aksi halde saldırgan, girişten sonra kurbanı kendi sitesine gönderen bir bağlantı hazırlayabilir. Bunun tarayıcı testi var.
 - **Probe'lar ve `/metrics` açık kalır:** Kubernetes ve Prometheus çerez taşıyamaz.
+
+### Kullanıcı hesapları ve veri izolasyonu
+Paylaşılan anahtarda herkes her şeyi görür. Hesap kipinde ([`accounts.py`](../datadigest/accounts.py)) her kullanıcı yalnızca kendi yüklediği veri setlerini görür; yönetici hepsini görür ve kullanıcıları yönetir.
+- **Parola asla saklanmaz, özeti saklanır.** `scrypt` kasıtlı olarak yavaş ve bellek yoğun bir özet fonksiyonudur: veritabanı sızsa bile parolaları denemek pahalıdır. Her kullanıcının **tuzu** (salt) farklıdır, yani aynı parola iki kullanıcıda farklı özet verir.
+- **Oturum tablosu yok.** Çerez `kullanıcı kimliği.son kullanma.imza` biçimindedir ve `SECRET_KEY` ile HMAC'lenir. Sunucu imzayı doğrular; sahte ya da süresi uzatılmış çerez geçmez.
+- **Yine de her istekte kullanıcıya bakılır.** İmzalı çerezin zayıf yanı geri alınamamasıdır. Kullanıcı satırı her istekte okunduğu için, devre dışı bırakılan hesap çerezin süresi dolmadan da hemen kilitlenir.
+- **API anahtarı bir kez gösterilir.** Veritabanında yalnızca SHA-256 özeti durur.
+- **Yanlış parola ile olmayan e-posta aynı cevabı, aynı sürede verir.** Yoksa saldırgan hangi e-postaların kayıtlı olduğunu öğrenir (kullanıcı sayımı, *user enumeration*).
+- **Başkasının veri seti 403 değil 404 döner.** 403 "bu kimlik var ama senin değil" demektir; 404 hiçbir şey sızdırmaz.
+- **İzolasyon tek bir yerde.** Bütün veri seti sorguları [`visible`](../datadigest/api/auth.py) fonksiyonundan geçer. Kural her uca ayrı ayrı yazılsaydı biri unutulurdu; testler her ucu başkasının veri setiyle deniyor.
+- **Yönetici kendini kilitleyemez.** Kendi rolünü düşüremez, hesabını kapatamaz ya da silemez; böylece her zaman en az bir yönetici kalır.
+
+**Dene:** `AUTH_MODE=accounts ADMIN_EMAIL=sen@example.org ADMIN_PASSWORD=en-az-on-karakter python -m datadigest` ile başlat, `/account` sayfasından bir üye ekle, iki ayrı tarayıcıda iki hesapla dosya yükle.
 
 ### Tedarik zinciri
 - **Actions SHA'ya sabit.** `actions/checkout@v5` bir etikettir ve taşınabilir; ele geçirilen bir depo aynı etikete kötü kod koyabilir. 40 karakterlik commit SHA'sı değişmez. Yanına yorum olarak sürüm yazılır (`# v5`).
@@ -404,6 +377,12 @@ pandas dosyanın tamamını tek bir sürecin belleğine alır; üstüne ayrışt
 | **local[*]** | Spark'ı tek makinede, tüm çekirdeklerle çalıştırır. | Varsayılan (`SPARK_MASTER`). Aynı kod, `spark://...` ya da Kubernetes adresiyle bir kümede çalışır. |
 | **Catalyst** | Spark'ın sorgu optimize edicisi: planı yeniden düzenler, gereksiz sütunları okumaz. | Parquet gibi sütunlu biçimlerde sadece gereken sütunlar okunur. |
 
+**Yerel kip ile küme kipi.** `SPARK_MASTER=local[*]` iken sürücü (driver) ve yürütücüler (executor) aynı süreçtedir. `spark://spark-master:7077` verince worker yalnızca **sürücü** olur: işi planlar, küçük sonuçları toplar. Dosyayı okuyan ve toplama işlemlerini yapan, başka makinelerdeki **yürütücülerdir**. Bunun iki sonucu var:
+- Yürütücüler dosyayı kendileri açar; bu yüzden `LARGE_DATA_DIR` her makinede **aynı yolda** bağlı paylaşılan bir disk olmalıdır.
+- Yürütücüler sürücüye geri bağlanır; Kubernetes'te sürücünün adresi pod IP'sidir (`SPARK_DRIVER_HOST`).
+
+[`deploy/k8s-spark/`](../deploy/k8s-spark/kustomization.yaml) bunu hazır kurar ve CI gerçek bir kind kümesinde dener. `spark.cores.max` ayarı önemlidir: sınır konmazsa ilk uygulama kümenin bütün çekirdeklerini alır, ikincisi bekler.
+
 ### Aynı sonucu vermek: iki motor, tek profil
 Spark'ın kendi tür çıkarımı (`inferSchema`) pandas'tan farklı karar verir; iki motor farklı skor üretirse kullanıcı hangisine güveneceğini bilemez. Bu yüzden her sütunu **metin olarak** okudum ve pandas'taki karar sırasını (sayı → bool → tarih → kategorik → metin) sayımlarla yeniden kurdum. Grafikler ve rapor aynen çalışır, çünkü çıktı aynı JSON'dur. Bunu **eşdeğerlik testi** doğruluyor: aynı dosya iki motordan geçer ve bütün profil sayı sayı karşılaştırılır ([`test_spark_profile.py`](../tests/test_spark_profile.py)).
 
@@ -424,7 +403,7 @@ Yükleme sınırı 10 MB, çünkü dosya veritabanında saklanıyor. Büyük dos
 
 ## 14. İstatistik göstergeleri: ne ölçüyorlar, ne zaman yanıltırlar
 
-Bütün hesaplar [`stats.py`](../datadigest/core/stats.py) içinde. Önce bir ilke: **p-değeri "etki var mı"yı, etki büyüklüğü "ne kadar"ı söyler.** 50 bin satırda neredeyse her fark "anlamlı" çıkar; bu yüzden her testin yanında bir etki büyüklüğü var.
+Bütün hesaplar [`core/stats/`](../datadigest/core/stats/__init__.py) paketinde. Önce bir ilke: **p-değeri "etki var mı"yı, etki büyüklüğü "ne kadar"ı söyler.** 50 bin satırda neredeyse her fark "anlamlı" çıkar; bu yüzden her testin yanında bir etki büyüklüğü var.
 
 ### Dağılım ve merkezi eğilim
 | Gösterge | Anlamı | Dikkat |
@@ -452,6 +431,8 @@ Bütün hesaplar [`stats.py`](../datadigest/core/stats.py) içinde. Önce bir il
 ### Tutarlılık dereceleri
 - **Tamlık** (boş olmayan oran), **geçerlilik** (değerin kolonun türü olarak okunabilmesi), **biçim tutarlılığı** (en yaygın karakter deseninin payı: `9999-99-99`), **etiket varyantları** (`İstanbul` / `istanbul `), **çakışan anahtarlar** (aynı ID, farklı satır içeriği).
 - **Cronbach alfa**: bir ölçeğin maddelerinin aynı şeyi ölçüp ölçmediği (iç tutarlılık). α = k/(k−1) · (1 − Σvaryans / toplamın varyansı). ≥0.7 kabul edilebilir, ≥0.9 mükemmel. **Yalnızca aynı yapıyı ölçen sütunlar için anlamlıdır** (anket maddeleri); satış verisinde düşük çıkması hata değil, beklenen sonuçtur.
+- **"Anlamlı" ile "önemli" aynı şey değil.** p-değeri bir etkinin *var olduğundan* ne kadar emin olduğumuzu söyler, etkinin *büyüklüğünü* söylemez. 20.000 satırda 0,03'lük bir korelasyon testten geçer ama hiçbir işe yaramaz. Bu yüzden sekme düz cümlelerle yazılmış bir özetle açılır ([`highlights.py`](../datadigest/core/stats/highlights.py)): hem anlamlı hem büyük ilişkiler "bulgu", anlamlı ama küçük olanlar "dikkat" olarak işaretlenir. Tabloda da yeşil etiket yalnızca etkisi küçük olmayan anlamlı sonuçlara verilir.
+- **Çoklu test sorunu.** 40 test yaparsan, hiçbir ilişki olmasa bile yaklaşık 2 tanesi tesadüfen p < 0,05 verir. "Nasıl okunur" kutusu kaç test yapıldığını ve bu sayıyı gösterir.
 
 ### Duyarlılık (sensitivity) analizleri
 - Aykırı değerler çıkarılınca ortalama/medyan/std **yüzde kaç oynuyor**? %10'dan fazlaysa "sensitive".

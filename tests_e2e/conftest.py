@@ -23,6 +23,7 @@ from playwright.sync_api import sync_playwright
 ROOT = Path(__file__).resolve().parent.parent
 ARTIFACTS = ROOT / "e2e-artifacts"
 TOKEN = "e2e-access-token-0123456789"
+ADMIN = ("admin@example.org", "e2e-admin-password")
 
 
 def free_port() -> int:
@@ -31,14 +32,18 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
-def start_server(tmp_path: Path, name: str, token: str = "") -> tuple[subprocess.Popen, str]:
+def start_server(
+    tmp_path: Path, name: str, token: str = "", extra_env: dict | None = None
+) -> tuple[subprocess.Popen, str]:
     port = free_port()
     env = {
         **os.environ,
         "DATABASE_URL": f"sqlite:///{(tmp_path / (name + '.db')).as_posix()}",
         "REDIS_URL": "",  # inline mode: no Redis needed
         "ACCESS_TOKEN": token,  # explicit, so a developer's .env cannot leak into the test
+        "AUTH_MODE": "",
         "PYTHONUNBUFFERED": "1",
+        **(extra_env or {}),
     }
     subprocess.run(
         [sys.executable, "-m", "alembic", "upgrade", "head"],
@@ -77,6 +82,21 @@ def server(tmp_path_factory):
 @pytest.fixture(scope="session")
 def secured_server(tmp_path_factory):
     proc, base = start_server(tmp_path_factory.mktemp("e2e-secured"), "secured", token=TOKEN)
+    yield base
+    proc.terminate()
+    proc.wait(timeout=10)
+
+
+@pytest.fixture(scope="session")
+def accounts_server(tmp_path_factory):
+    """Accounts mode, with the first administrator created from the environment at startup."""
+    env = {
+        "AUTH_MODE": "accounts",
+        "SECRET_KEY": "e2e-secret-key",
+        "ADMIN_EMAIL": ADMIN[0],
+        "ADMIN_PASSWORD": ADMIN[1],
+    }
+    proc, base = start_server(tmp_path_factory.mktemp("e2e-accounts"), "accounts", extra_env=env)
     yield base
     proc.terminate()
     proc.wait(timeout=10)
@@ -141,10 +161,3 @@ def sales_id(server):
     dataset = post(server, "/api/samples/sales.csv")
     wait_status(server, f"/api/datasets/{dataset['id']}")
     return dataset["id"]
-
-
-@pytest.fixture(scope="session")
-def production_run_id(server):
-    run = post(server, "/api/optimize/examples/production")
-    wait_status(server, f"/api/optimizations/{run['id']}")
-    return run["id"]
