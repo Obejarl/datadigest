@@ -1,0 +1,16 @@
+project,expected_return,capex,engineers
+CRM upgrade,554.0,270,2
+Mobile app,519.0,258,2
+Data warehouse,524.0,151,5
+Solar roof,542.0,284,2
+New warehouse,241.0,92,1
+Robot arm,658.0,285,5
+ERP migration,171.0,80,4
+Website redesign,511.0,225,2
+Fleet telematics,582.0,279,5
+Training academy,492.0,221,2
+Cyber audit,389.0,262,5
+Packaging line,262.0,149,1
+Customer portal,445.0,134,4
+AI forecasting,279.0,129,4
+Office move,119.0,90,3

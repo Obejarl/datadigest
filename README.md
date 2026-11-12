@@ -18,6 +18,20 @@ pip install -r requirements.txt
 python -m datadigest          # http://127.0.0.1:8000: no Docker, Redis or PostgreSQL needed
 ```
 
+DataDigest does more than one thing, so everything has one home. There are three sections
+under one roof, each answering one question:
+
+| Section | The question it answers | What is in it |
+|---|---|---|
+| **[Data quality](#what-it-does)** | Can this file be trusted? | Quality score and warnings, column profiles, correlations, [statistics in plain words](#statistics), [big files with Spark](#big-files-with-spark), HTML report |
+| **[Optimize](#optimize-operations-research-on-the-same-files)** | What should we do with it? | Production planning, transportation, assignment and budget allocation, solved to the proven optimum on the same files |
+| **[Operations](#operations-capacity-planning-for-datadigest-itself)** | How do we run DataDigest itself? | [Capacity planning](#operations-capacity-planning-for-datadigest-itself), [accounts and API tokens](#access-control), [health checks and metrics](#reliability-and-observability), the [API reference](#api) |
+
+The sections are written down once, in [`datadigest/sections.py`](datadigest/sections.py). The
+navigation bar, the section cards on the home page, the footer links and the grouping of the
+API reference are generated from it, and a test fails if a page or an API route is added
+without a section. Nothing is removed to keep the scope tidy; it is given a place instead.
+
 That one process is enough for one person. The same code also runs as a small production service:
 a REST API, background workers behind a Redis queue, PostgreSQL, user accounts, Prometheus and
 Grafana, Docker Compose and Kubernetes manifests, and CI that tests all of it against real services.
@@ -31,6 +45,8 @@ Grafana, Docker Compose and Kubernetes manifests, and CI that tests all of it ag
 ![Statistics](docs/statistics.png)
 
 ## What it does
+
+The **Data quality** section:
 
 - **Reads messy real-world CSVs.** It detects the encoding (UTF-8, Windows-1254, Latin-1)
   and the delimiter (`,` `;` tab `|`), and understands decimal commas and `dd.mm.yyyy`
@@ -68,8 +84,35 @@ Grafana, Docker Compose and Kubernetes manifests, and CI that tests all of it ag
 - **Recovers from crashes.** If a worker dies mid-job, the cleanup CronJob marks the job
   failed after 15 minutes and the UI offers "Try again" instead of spinning forever.
 
-## Capacity planning
-### Capacity planning for DataDigest itself
+## Optimize: operations research on the same files
+
+Profiling says whether the data can be trusted; the **Optimize** section (its own entry in the
+navigation, `/optimize`) decides with it. It is a separate section on purpose: the data-quality
+pages work without ever opening it.
+
+![Optimize](docs/optimize.png)
+
+Pick a problem type, run the bundled example in one click, or point it at your own
+dataset (the form is built from the file's columns). Solvers run on the same queue and
+workers as profiling. With accounts switched on, a run belongs to its dataset's owner.
+
+| Problem | Decides | Method | Output beyond the plan |
+|---|---|---|---|
+| **Production planning** | How much of each product to make for maximum profit under machine, labour and material limits | LP / MIP with HiGHS | Shadow price of every resource, opportunity cost of products left out, integrality gap, what-if curve on the bottleneck |
+| **Transportation** | Who ships how much to whom at minimum cost | LP with HiGHS | Value of +1 supply per source, cost of +1 demand per destination, Sankey of flows |
+| **Assignment** | One-to-one pairing of people and tasks for the best team total | Hungarian algorithm | Who gives up their personal best task, and by how much |
+| **Budget allocation** | Which projects to fund under several budgets | 0/1 MIP with HiGHS | LP upper bound and gap; which projects the optimum swaps versus the ranking rule |
+
+Every result is compared with the rule of thumb people actually use (highest margin
+first, cheapest route first, best pair first, best value-per-cost first). On the bundled
+examples the optimum is **23%, 5%, 6% and 13% better**.
+
+The numbers are verified, not just plausible: tests check each optimum against brute
+force, and each shadow price or dual against re-solving with one more unit.
+
+![Production plan](docs/production.png)
+
+## Operations: capacity planning for DataDigest itself
 
 ![Capacity](docs/capacity.png)
 
@@ -81,10 +124,6 @@ enter a scenario (shareable as a link). It reports:
 - the cost-optimal count (worker cost against waiting cost);
 - the count needed at peak load;
 - ready-to-paste `minReplicas`/`maxReplicas` for the worker HPA.
-
-> The operations-research solvers that used to live here (production planning, transportation,
-> assignment, budget allocation) are now their own project, OptiDesk, so that each tool does one
-> thing. DataDigest checks the data; OptiDesk decides with it.
 
 ## Statistics
 
@@ -330,9 +369,10 @@ flowchart LR
     M[migrate<br/>Job] -->|alembic upgrade| PG
 ```
 
-1. `POST /api/datasets` stores the job and returns **202 Accepted** right away. Queue entries
+1. `POST /api/datasets` (or `POST /api/optimizations`) stores the job and returns **202 Accepted**
+   right away. Queue entries
    carry their kind (`dataset:<id>`).
-2. A worker takes the job from Redis, profiles the file, and writes the result as JSONB to
+2. A worker takes the job from Redis, profiles the file or runs the solver, and writes the result as JSONB to
    PostgreSQL.
 3. The client polls `GET /api/datasets/{id}` until the status is `done`.
 
@@ -362,6 +402,12 @@ One Docker image runs every role:
 | `GET` | `/api/datasets/{id}/report` | HTML report (`?download=true` to save) |
 | `POST` | `/api/datasets/{id}/reprocess` | Run the analysis again (`409` while queued/processing) |
 | `DELETE` | `/api/datasets/{id}` | Delete dataset and file |
+| `GET` | `/api/optimize/kinds` | Problem types, parameter schemas and examples |
+| `POST` | `/api/optimizations` | Run a solver on a dataset: `{dataset_id, kind, params}` (`202`, `422` on bad params or unknown columns) |
+| `POST` | `/api/optimize/examples/{kind}` | Load the example data and solve it in one call |
+| `GET` | `/api/optimizations`, `/api/optimizations/{id}` | Runs, and one run with its full result |
+| `GET` | `/api/optimizations/{id}/report` | Optimization report as HTML |
+| `DELETE` | `/api/optimizations/{id}` | Delete a run |
 | `GET` | `/api/capacity` | M/M/c worker sizing; missing inputs come from measured job history |
 | `GET` | `/api/server-files` | Files in `LARGE_DATA_DIR` that can be registered (`enabled: false` when unset) |
 | `POST` | `/api/server-files/{name}` | Profile a file from `LARGE_DATA_DIR` (`202`; `404` for names that are not plain files in that folder) |
@@ -452,7 +498,8 @@ pytest tests_e2e                               # browser tests (E2E_BROWSER_CHAN
 ```
 
 `scripts/smoke_test.sh <url>` checks a running deployment end to end. It waits for
-`/readyz`, queues six profiles of the bundled samples at once, waits for each and calls the
+`/readyz`, queues six profiles of the bundled samples at once, waits for each, solves all four
+optimization examples and calls the
 capacity planner (set `ACCESS_TOKEN` if the server requires one).
 
 GitHub Actions runs eight jobs on every push:
@@ -461,13 +508,13 @@ GitHub Actions runs eight jobs on every push:
 - **spark:** the Spark engine against pandas (coverage gate on the Spark module), plus a
   benchmark run;
 - **integration:** tests against real PostgreSQL and Redis service containers, including a
-  migration up/down/up;
+  migration up/down/up and all four optimizers through the queue;
 - **browser:** [Playwright](https://playwright.dev/) drives a real browser through the dashboard:
-  uploading files, tabs and keyboard shortcuts, the delete dialog, the statistics summary, the
+  uploading files, tabs and keyboard shortcuts, the delete dialog, the optimizer flow, the statistics summary, the
   capacity page, phone-width layout including charts, the token sign-in, and accounts (an
   administrator adds a member, who sees only their own datasets and is locked out when disabled);
 - **docker:** a Docker build, then that smoke test against the running container (which
-  proves the statistics stack and the sample files are in the image), and a build of the Spark
+  proves the statistics stack, the SciPy solvers and the sample files are in the image), and a build of the Spark
   variant that profiles a sample with Spark inside it;
 - **compose:** the full `docker compose` stack (PostgreSQL, Redis, migration, API, two
   workers, Prometheus, Grafana) and these checks:
@@ -542,6 +589,10 @@ pushes them to `ghcr.io/obejarl/datadigest`, and creates the GitHub Release from
   ports on `127.0.0.1` only, and Grafana's `admin/admin` login and anonymous viewer are for
   local demos. Behind a TLS-terminating proxy, run uvicorn with `--proxy-headers` so the
   session cookie is marked `Secure`.
+- Optimization models are capped at 20,000 products/items/routes and 1,500 agents or
+  tasks, and each run at `OPT_TIME_LIMIT_SECONDS` (10 s). At the limit HiGHS returns its
+  best plan so far and the result says so. Solvers read an uploaded file; server-side files
+  are profiled only.
 - The statistics explore; they do not prove. The summary names what stands out, but it cannot
   know which relations matter in your domain.
 - Backups are logical dumps kept on a volume next to the database, so they protect against
@@ -557,16 +608,28 @@ pushes them to `ghcr.io/obejarl/datadigest`, and creates the GitHub Release from
 - [ ] Alertmanager (the alert rules exist; notifications do not)
 - [x] Spark on a cluster (Kubernetes) instead of local mode
 - [ ] A multi-machine Spark benchmark; executors that scale with the load
+- [ ] Multi-objective optimization and sensitivity ranges for the solvers
 - [ ] A hosted live demo
 
 ## Project layout
 
 ```
+datadigest/sections.py  the map: which features exist and which section each belongs to
+
+# Data quality
 datadigest/core/      pure profiling: loader, profile (pandas), spark_profile, engines, charts, report (no DB, no HTTP)
 datadigest/core/stats/  the Statistics tab: distributions, associations, consistency, sensitivity, highlights
+
+# Optimize
+datadigest/optimize/  pure solvers (production, transport, assignment, knapsack)
+
+# Operations
+datadigest/capacity.py, accounts.py, worker.py, jobqueue.py, cleanup.py, metrics.py
+
+# Shared
 datadigest/api/       FastAPI routes, auth, schemas, dependencies
-datadigest/static/    dashboard (plain HTML/CSS + one script per page: core, index, dataset, stats, capacity, account, login)
-datadigest/*.py       config, db, models, accounts, jobs, queue, worker, cleanup, capacity (M/M/c), serverfiles, CLI
+datadigest/static/    dashboard (plain HTML/CSS + one script per page: core, index, dataset, stats, planner, optimize, capacity, account, login)
+datadigest/*.py       config, db, models, jobs, envelope (result shape of the planners), serverfiles, CLI
 scripts/              smoke test, manifest checks, engine benchmark
 migrations/           Alembic
 k8s/                  Kubernetes manifests (kustomize)

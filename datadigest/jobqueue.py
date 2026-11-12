@@ -24,13 +24,21 @@ from typing import NamedTuple
 
 from redis import Redis
 
+# How long dequeue() blocks on an empty queue, and how long the client waits for any reply.
+# The second must be the larger one: the client's default (5 s) equals the block, so an idle
+# worker saw a timeout instead of "no job" and backed off for up to 30 s before looking again.
+BLOCK_SECONDS = 5
+SOCKET_TIMEOUT_SECONDS = BLOCK_SECONDS + 10
+
 
 def connect(url: str) -> Redis:
-    return Redis.from_url(url, decode_responses=True)
+    return Redis.from_url(
+        url, decode_responses=True, socket_timeout=SOCKET_TIMEOUT_SECONDS, socket_connect_timeout=5
+    )
 
 
 class Job(NamedTuple):
-    kind: str  # "dataset" (profile a file); the worker maps each kind to a handler
+    kind: str  # "dataset" (profile a file) or "optimization" (run a solver)
     id: uuid.UUID
     raw: str = ""  # the queue entry, needed to ack it
     attempts: int = 1
@@ -49,7 +57,7 @@ def enqueue(redis: Redis, queue: str, job_id: uuid.UUID, kind: str = "dataset") 
     redis.lpush(queue, f"{kind}:{job_id}")
 
 
-def dequeue(redis: Redis, queue: str, timeout: int = 5, now: float | None = None) -> Job | None:
+def dequeue(redis: Redis, queue: str, timeout: int = BLOCK_SECONDS, now: float | None = None) -> Job | None:
     """Block up to `timeout` seconds for a job and move it to the processing list atomically."""
     processing, taken, attempts, _ = _keys(queue)
     raw = redis.blmove(queue, processing, timeout, "RIGHT", "LEFT")

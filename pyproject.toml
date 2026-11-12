@@ -1,7 +1,7 @@
 [project]
 name = "datadigest"
 version = "0.8.0"
-description = "Tells you whether a CSV can be trusted: a quality score, the problems behind it, statistics in plain words and a report."
+description = "Tells you whether a CSV can be trusted: a quality score, the problems behind it, statistics in plain words and a report; an Optimize section solves planning models on the same files."
 requires-python = ">=3.13"
 license = "MIT"
 

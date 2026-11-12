@@ -9,32 +9,36 @@ from sqlalchemy.orm import Session
 
 from datadigest.capacity import CapacityInputs, plan
 from datadigest.db import get_db
-from datadigest.models import Dataset, Status, utcnow
+from datadigest.models import Dataset, Optimization, Status, utcnow
 
 router = APIRouter(prefix="/api", tags=["capacity"])
 
 
 def measure(db: Session, window_hours: int = 24) -> dict:
-    """Arrival rate and service time of DataDigest's own jobs, from the last day of history."""
+    """Arrival rate and service time of DataDigest's own jobs (profiles and solver runs), from
+    the last day of history."""
     since = utcnow() - timedelta(hours=window_hours)
-    arrivals, first = db.execute(
-        select(func.count(), func.min(Dataset.created_at)).where(Dataset.created_at >= since)
-    ).one()
-    if first is not None:
-        first = first.replace(tzinfo=None)
-    rows = db.execute(
-        select(Dataset.queued_at, Dataset.started_at, Dataset.finished_at)
-        .where(
-            Dataset.status == Status.DONE, Dataset.started_at.is_not(None), Dataset.finished_at.is_not(None)
-        )
-        .order_by(Dataset.created_at.desc())
-        .limit(500)
-    ).all()
+    arrivals = 0
+    first = None
     durations, waits = [], []
-    for queued, started, finished in rows:
-        durations.append((finished - started).total_seconds())
-        if queued is not None:
-            waits.append(max(0.0, (started - queued).total_seconds()))
+    for model in (Dataset, Optimization):
+        count, earliest = db.execute(
+            select(func.count(), func.min(model.created_at)).where(model.created_at >= since)
+        ).one()
+        arrivals += count
+        if earliest is not None:
+            earliest = earliest.replace(tzinfo=None)
+            first = earliest if first is None else min(first, earliest)
+        rows = db.execute(
+            select(model.queued_at, model.started_at, model.finished_at)
+            .where(model.status == Status.DONE, model.started_at.is_not(None), model.finished_at.is_not(None))
+            .order_by(model.created_at.desc())
+            .limit(500)
+        ).all()
+        for queued, started, finished in rows:
+            durations.append((finished - started).total_seconds())
+            if queued is not None:
+                waits.append(max(0.0, (started - queued).total_seconds()))
     minutes = max(60.0, (utcnow().replace(tzinfo=None) - first).total_seconds() / 60) if first else None
     mean = statistics.fmean(durations) if durations else None
     return {

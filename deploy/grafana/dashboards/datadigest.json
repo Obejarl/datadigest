@@ -452,7 +452,7 @@
     },
     {
       "type": "timeseries",
-      "title": "Datasets by status",
+      "title": "Datasets and optimization runs by status",
       "datasource": {
         "type": "prometheus",
         "uid": "prometheus"
@@ -468,6 +468,15 @@
           "refId": "A",
           "expr": "sum by (status) (datadigest_datasets)",
           "legendFormat": "datasets {{status}}",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "sum by (status) (datadigest_optimizations)",
+          "legendFormat": "runs {{status}}",
           "datasource": {
             "type": "prometheus",
             "uid": "prometheus"

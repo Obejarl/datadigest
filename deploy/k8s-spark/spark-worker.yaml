@@ -15,6 +15,9 @@ spec:
       labels:
         app: spark-worker
     spec:
+      # A Service named spark-master makes Kubernetes inject SPARK_MASTER_PORT=tcp://...,
+      # which Spark reads as its own port setting and crashes on. Switch those variables off.
+      enableServiceLinks: false
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000

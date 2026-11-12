@@ -73,7 +73,7 @@ def test_delete_asks_first_and_cancel_keeps_the_dataset(page, server, tmp_path):
     row.locator('button[aria-label^="Delete"]').click()
     dialog = page.locator("dialog.modal")
     expect(dialog).to_be_visible()
-    expect(dialog).to_contain_text("its report will be removed permanently")  # says what goes
+    expect(dialog).to_contain_text("optimization runs")  # tells you what else goes
     dialog.get_by_role("button", name="Cancel").click()
     expect(dialog).to_have_count(0)
     expect(page.locator("#datasets tr", has_text="to-delete.csv")).to_have_count(2)
@@ -81,6 +81,42 @@ def test_delete_asks_first_and_cancel_keeps_the_dataset(page, server, tmp_path):
     row.locator('button[aria-label^="Delete"]').click()
     page.locator("dialog.modal .solid-danger").click()
     expect(page.locator("#datasets tr", has_text="to-delete.csv")).to_have_count(1)
+
+
+def test_optimizer_example_one_click_to_a_result_with_charts(page, server):
+    page.goto(server + "/optimize")
+    expect(page.locator(".kind-card")).to_have_count(4)
+    page.locator('.kind-card[data-kind="production"] .btn.primary').click()
+    page.wait_for_url("**/optimizations/*")
+    expect(page.locator("#result .tile").first).to_contain_text("Total profit")
+    expect(page.locator("#result")).to_contain_text("What the optimum tells you")
+    expect(page.locator("#chips")).to_contain_text("optimal")
+    expect(page.locator("#result .js-plotly-plot").first).to_be_visible()  # Plotly drew a chart
+
+
+def test_change_inputs_reopens_the_form_with_that_runs_parameters(page, server, production_run_id):
+    page.goto(f"{server}/optimizations/{production_run_id}")
+    page.locator("#change-inputs").click()
+    expect(page.locator("#config")).to_be_visible()
+    machine = page.locator("#config-fields .res-row", has_text="machine_hours")
+    expect(machine.locator("input[type=number]")).to_have_value("600")
+    expect(machine.locator("input[type=checkbox]")).to_be_checked()
+
+    machine.locator("input[type=number]").fill("900")
+    page.locator("#config-solve").click()
+    page.wait_for_url("**/optimizations/*")
+    expect(page.locator("#chips")).to_contain_text("optimal")
+    assert page.url.split("/")[-1] != production_run_id  # a new run, the old one is kept
+
+
+def test_the_optimize_section_is_one_click_from_every_page(page, server):
+    page.goto(server + "/")
+    page.locator(".nav a", has_text="Optimize").click()
+    page.wait_for_url("**/optimize")
+    expect(page.locator(".nav a.active")).to_have_text("Optimize")
+    page.goto(server + "/")
+    page.locator('.section-card[data-section="optimize"]').click()
+    page.wait_for_url("**/optimize")
 
 
 def test_capacity_recomputes_when_the_inputs_change(page, server):
@@ -98,7 +134,7 @@ def test_capacity_recomputes_when_the_inputs_change(page, server):
     expect(page.locator("#hpa")).to_contain_text("minReplicas: 5")
 
 
-@pytest.mark.parametrize("route", ["/", "/capacity"])
+@pytest.mark.parametrize("route", ["/", "/optimize", "/capacity"])
 def test_phone_width_has_no_horizontal_scroll(browser, server, route):
     context = browser.new_context(viewport={"width": 375, "height": 812})
     page = context.new_page()
@@ -109,10 +145,10 @@ def test_phone_width_has_no_horizontal_scroll(browser, server, route):
     assert widths[0] <= widths[1], f"{route} scrolls sideways: {widths}"
 
 
-def test_phone_width_dataset_page_and_its_charts(browser, server, sales_id):
+def test_phone_width_dataset_and_result_pages(browser, server, sales_id, production_run_id):
     context = browser.new_context(viewport={"width": 375, "height": 812})
     page = context.new_page()
-    for route in (f"/datasets/{sales_id}",):
+    for route in (f"/datasets/{sales_id}", f"/optimizations/{production_run_id}"):
         page.goto(server + route)
         page.wait_for_load_state("networkidle")
         widths = page.evaluate("[document.documentElement.scrollWidth, innerWidth]")
@@ -201,3 +237,24 @@ def test_a_failed_file_offers_try_again(page, server, tmp_path):
     expect(page.locator("#retry")).to_be_visible()
     dataset_id = page.url.split("/")[-1]
     assert post(server, f"/api/datasets/{dataset_id}/reprocess")["status"] == "queued"
+
+
+def test_phone_width_reaches_every_section_from_the_footer(browser, server):
+    """Narrow screens hide the bar at the top, so the footer repeats the links."""
+    context = browser.new_context(viewport={"width": 375, "height": 812})
+    page = context.new_page()
+    page.goto(server + "/")
+    expect(page.locator("nav.nav")).to_be_hidden()
+    expect(page.locator(".section-card")).to_have_count(3)
+    links = page.locator("nav.sitemap a")
+    assert links.evaluate_all("els => els.map(a => a.getAttribute('href'))") == [
+        "/",
+        "/optimize",
+        "/capacity",
+        "/account",
+        "/docs",
+    ]
+    page.locator('nav.sitemap a[href="/optimize"]').click()
+    page.wait_for_url("**/optimize")
+    expect(page.locator(".kind-card")).to_have_count(4)
+    context.close()

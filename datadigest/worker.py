@@ -25,11 +25,11 @@ from sqlalchemy.orm import sessionmaker
 from datadigest import jobqueue, metrics
 from datadigest.config import get_settings
 from datadigest.db import SessionLocal
-from datadigest.jobs import mark_failed, process_dataset
+from datadigest.jobs import mark_failed, process_dataset, process_optimization
 
 log = logging.getLogger("datadigest.worker")
 
-HANDLERS = {"dataset": process_dataset}
+HANDLERS = {"dataset": process_dataset, "optimization": process_optimization}
 TRANSIENT_ERRORS = (RedisConnectionError, RedisTimeoutError, OperationalError)
 MAX_BACKOFF_SECONDS = 30.0
 
@@ -55,7 +55,7 @@ class Worker:
         log.info("received signal %s, finishing current job then exiting", signum)
         self.stopping = True
 
-    def run_once(self, timeout: int = 5) -> bool:
+    def run_once(self, timeout: int = jobqueue.BLOCK_SECONDS) -> bool:
         """Process at most one job. Returns False if the queue stayed empty for `timeout` seconds."""
         job = jobqueue.dequeue(self.redis, self.queue, timeout=timeout)
         if job is None:

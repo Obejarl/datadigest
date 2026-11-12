@@ -4,16 +4,17 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
-from fastapi.responses import FileResponse
+from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 
-from datadigest import accounts, metrics
+from datadigest import accounts, metrics, sections
 from datadigest.api import (
     auth,
     routes_accounts,
     routes_capacity,
     routes_datasets,
     routes_health,
+    routes_optimize,
     routes_samples,
     routes_serverfiles,
     routes_stats,
@@ -44,8 +45,10 @@ async def lifespan(_app: FastAPI):
 app = FastAPI(
     title="DataDigest",
     version="0.8.0",
-    description="Upload a CSV, get an automatic data-quality profile, charts and an HTML report.",
+    description="Upload a CSV, get an automatic data-quality profile, charts and an HTML report. "
+    "The Optimize section solves production, transport, assignment and budget models on the same files.",
     lifespan=lifespan,
+    openapi_tags=sections.openapi_tags(),
 )
 app.include_router(routes_health.router)
 app.include_router(auth.router)
@@ -54,6 +57,7 @@ app.include_router(routes_datasets.router)
 app.include_router(routes_stats.router)
 app.include_router(routes_samples.router)
 app.include_router(routes_serverfiles.router)
+app.include_router(routes_optimize.router)
 app.include_router(routes_capacity.router)
 
 
@@ -88,32 +92,46 @@ async def security_headers(request, call_next):
 app.mount("/static", StaticFiles(directory=STATIC), name="static")
 
 
-def page(name: str) -> FileResponse:
-    # HTML is revalidated on every visit; it references versioned assets (style.css?v=...),
-    # so a new release reaches browsers immediately instead of mixing old and new files.
-    return FileResponse(STATIC / name, headers={"Cache-Control": "no-cache"})
+def page(name: str, path: str) -> HTMLResponse:
+    """A static page with the shared parts filled in: the navigation, the section cards and the
+    footer links all come from datadigest/sections.py, so no page carries its own copy.
+
+    HTML is revalidated on every visit; it references versioned assets (style.css?v=...),
+    so a new release reaches browsers immediately instead of mixing old and new files."""
+    html = (STATIC / name).read_text(encoding="utf-8")
+    return HTMLResponse(sections.render(html, path), headers={"Cache-Control": "no-cache"})
 
 
 @app.get("/", include_in_schema=False)
 def index():
-    return page("index.html")
+    return page("index.html", "/")
 
 
 @app.get("/datasets/{dataset_id}", include_in_schema=False)
 def dataset_page(dataset_id: str):
-    return page("dataset.html")
+    return page("dataset.html", "/datasets/")
 
 
 @app.get("/login", include_in_schema=False)
 def login_page():
-    return page("login.html")
+    return page("login.html", "/login")
 
 
 @app.get("/account", include_in_schema=False)
 def account_page():
-    return page("account.html")
+    return page("account.html", "/account")
+
+
+@app.get("/optimize", include_in_schema=False)
+def optimize_page():
+    return page("optimize.html", "/optimize")
+
+
+@app.get("/optimizations/{optimization_id}", include_in_schema=False)
+def optimization_page(optimization_id: str):
+    return page("optimization.html", "/optimizations/")
 
 
 @app.get("/capacity", include_in_schema=False)
 def capacity_page():
-    return page("capacity.html")
+    return page("capacity.html", "/capacity")

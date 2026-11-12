@@ -161,3 +161,10 @@ def sales_id(server):
     dataset = post(server, "/api/samples/sales.csv")
     wait_status(server, f"/api/datasets/{dataset['id']}")
     return dataset["id"]
+
+
+@pytest.fixture(scope="session")
+def production_run_id(server):
+    run = post(server, "/api/optimize/examples/production")
+    wait_status(server, f"/api/optimizations/{run['id']}")
+    return run["id"]

@@ -223,7 +223,7 @@ Her komutta neye bakacağın:
    - manifest çapraz kontrolü,
    - `kubeconform` (Kubernetes şema doğrulaması).
 2. **integration:** GitHub'ın açtığı **gerçek** PostgreSQL ve Redis container'larına karşı uçtan uca test. Önce migration'lar yukarı, aşağı, tekrar yukarı çalıştırılır.
-3. **docker:** Image'ı build eder, container'ı başlatır, [`smoke_test.sh`](../scripts/smoke_test.sh) ile örnek dosyaları container içinde profiller.
+3. **docker:** Image'ı build eder, container'ı başlatır, [`smoke_test.sh`](../scripts/smoke_test.sh) ile profil ve dört optimizasyonu container içinde çözer.
 4. **compose:** Tüm sistemi `docker compose up` ile kaldırır ve duman testini kuyruk üzerinden koşar. İşlerin iki worker container'ına da dağıldığını kontrol eder.
 5. **kubernetes:** [kind](https://kind.sigs.k8s.io/) ile GitHub'ın makinesinde **gerçek bir Kubernetes kümesi** kurar. İmajı yükleyip `kubectl apply -k k8s/` yapar, ardından şunları kontrol eder:
    - StatefulSet, migration Job'ı ve Deployment'lar hazır mı,
@@ -251,11 +251,50 @@ Her komutta neye bakacağın:
 
 ---
 
-## 9. Kapasite planlama: kuyruk teorisi
+## 9. Yöneylem araştırması (optimizasyon)
 
-Profilleme "veride ne var?" sorusunu cevaplar. Bu bölüm sistemin kendisiyle ilgili bir soruyu cevaplıyor: "kaç worker gerekir?"
+Profilleme "veride ne var?" sorusunu cevaplar. Optimizasyon ise "bu veriyle en iyi karar ne?" sorusunu. Dört model de [`datadigest/optimize/`](../datadigest/optimize/) altında saf fonksiyonlar olarak duruyor: DB ve HTTP bilmiyorlar.
 
-> Üretim planı, ulaştırma, atama ve bütçe seçimi çözücüleri (LP, MIP, Macar algoritması) eskiden bu projedeydi. 0.8.0'da kendi projelerine (OptiDesk) taşındılar. Gerekçe: bir araç tek bir işi iyi yapmalı. "Bu araç ne işe yarar?" sorusunun tek cümlelik cevabı yoksa kapsam dağılmış demektir.
+### Doğrusal programlama (LP) ve gölge fiyat
+[`production.py`](../datadigest/optimize/production.py), üretim planını bir LP olarak kuruyor:
+
+- **Amaç:** max Σ kâr·miktar.
+- **Kısıtlar:** her kaynak için Σ kullanım·miktar ≤ kapasite.
+
+LP çözülünce her kısıtın bir **dual** değeri de gelir. Buna **gölge fiyat** denir: o kaynaktan bir birim daha olsaydı kâr ne kadar artardı? "Makine saati darboğaz, 1 saat daha 21 TL kazandırır" cümlesi buradan çıkıyor. Test, bu sayının doğruluğunu kapasiteyi 1 artırıp yeniden çözerek kontrol ediyor.
+
+**Neden gölge fiyat her şey değil?** Gölge fiyat sadece küçük değişiklikler için geçerli. Makineyi %50 artırınca bu sefer işçilik bitiyor; bunu what-if eğrisi gösteriyor. Uygulama bu durumda kullanıcıyı açıkça uyarıyor.
+
+### Tam sayılı programlama (MIP) ve LP gevşetmesi
+"Yarım sandalye üretilemez" → değişkenler tam sayı olmak zorunda. Bu durumda problem MIP'e dönüşür: çözmesi zordur ve dual değer vermez. Uygulama bu yüzden ayrıca **LP gevşetmesini** (tam sayı şartını kaldırılmış hali) çözüyor ve ondan iki şey elde ediyor:
+- gölge fiyatları,
+- teorik üst sınırı.
+
+İkisi arasındaki farka **integrality gap** deniyor. "Tam sayı plan, teorik optimumun %0,04 yakınında" cümlesi bu farktan geliyor. Bütçe seçimi ([`knapsack.py`](../datadigest/optimize/knapsack.py)) de aynı fikrin 0/1 hali.
+
+### Ulaştırma problemi ve dual fiyatlar
+[`transport.py`](../datadigest/optimize/transport.py) klasik ulaştırma tablosunu okuyor: arz kolonu, talep satırı ve birim maliyetler. Dual değerler iki soruyu cevaplıyor:
+- "Ankara'ya 1 birim daha arz 32 TL tasarruf ettirir."
+- "Trabzon'a 1 birim daha talep 105 TL ekler."
+
+Trabzon'daki 105 tam olarak boş kapasitesi olan İstanbul'dan Trabzon'a gönderim maliyeti. Ekonomik yorumu bu.
+
+### Atama problemi: Macar algoritması
+n kişiyi n işe atamanın n! yolu var; 10 kişide 3,6 milyon. Macar algoritması ([`assignment.py`](../datadigest/optimize/assignment.py), SciPy'nin `linear_sum_assignment`'ı) bunu O(n³)'te kesin olarak çözer. İlginç içgörü: takım optimumu için bazı kişiler en iyi oldukları işi yapmıyor.
+
+### Optimum ile sezgisel yöntem farkı
+Her sonuç, insanların gerçekte kullandığı basit kuralla karşılaştırılıyor:
+
+| Problem | Basit kural |
+|---|---|
+| Üretim planı | En yüksek marjlı ürün önce |
+| Ulaştırma | En ucuz rota önce |
+| Atama | En iyi eşleşme önce |
+| Bütçe seçimi | En iyi değer/maliyet önce |
+
+Fark, optimizasyonun neden işe yaradığının somut kanıtı: örneklerde %5 ile %23 arası.
+
+> **Tek çatı, üç bölüm.** Program birden fazla iş yapıyor: veri kalitesi (*bu dosyaya güvenilir mi?*), optimizasyon (*onunla ne yapmalıyız?*) ve işletim (*DataDigest'in kendisini nasıl çalıştırırız?*). Kapsam dağınık göründüğünde çözüm özellik silmek değil, her özelliğe **tek bir ev** vermektir. Bu harita tek bir yerde yazılı: [`sections.py`](../datadigest/sections.py). Menü, ana sayfadaki bölüm kartları, alt bilgideki bağlantılar ve API belgelerindeki sıralama oradan üretilir; hiçbir sayfa menünün kendi kopyasını taşımaz. Bir test de haritayı dürüst tutar: bölümü olmayan bir sayfa ya da API ucu eklenirse test kırılır ([`test_sections.py`](../tests/test_sections.py)). Genel ders: bir kural yalnızca yazılı olduğu için değil, **tek yerde** yazılı olduğu ve **denetlendiği** için tutar. Hesap kipinde bir çözüm, üzerinde çalıştığı veri setinin sahibine aittir; ayrı bir sahiplik sütunu yoktur.
 
 ### Kuyruk teorisi: M/M/c ve Kubernetes
 [`capacity.py`](../datadigest/capacity.py) DataDigest'in kendi worker'larını boyutlandırıyor. Kullanılan büyüklükler:
@@ -274,7 +313,10 @@ Profilleme "veride ne var?" sorusunu cevaplar. Bu bölüm sistemin kendisiyle il
   Sayfa bunları kopyalanabilir YAML olarak veriyor.
 - **Varsayımlar:** M/M/c rastgele gelişler ve üstel dağılımlı servis süreleri varsayar. Ölçülen değişkenlik katsayısı (CV) 1'den büyükse gerçek beklemeler daha uzun olabilir; uygulama bunu da söylüyor.
 
-**Dene:** `/capacity`'de geliş hızını artırıp worker sayısının nasıl sıçradığını izle.
+**Dene:**
+1. `/optimize`'da dört örneği çalıştır.
+2. Üretim planında "Change inputs" ile makine kapasitesini değiştir ve gölge fiyatın nasıl değiştiğine bak.
+3. `/capacity`'de geliş hızını artırıp worker sayısının nasıl sıçradığını izle.
 
 ---
 

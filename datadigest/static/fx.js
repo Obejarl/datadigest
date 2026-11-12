@@ -31,7 +31,7 @@
 
   // Cursor spotlight: tell the hovered surface where the pointer is.
   if (fine && !calm) {
-    const SURFACES = ".card, .tile, .col, .kind-card, .promo, .drop";
+    const SURFACES = ".card, .tile, .col, .kind-card, .promo, .section-card, .drop";
     let frame = 0;
     document.addEventListener("pointermove", (event) => {
       if (frame) return;

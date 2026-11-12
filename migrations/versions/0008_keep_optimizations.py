@@ -1,7 +1,11 @@
-"""the optimizers moved to their own project (OptiDesk); drop their table
+"""make sure the optimizations table exists
 
-Revision ID: 0006
-Revises: 0005
+An unreleased build of 0.8.0 dropped this table (its revision 0006, since removed). Databases
+that were upgraded with that build get the table back, empty; every other database already has
+it and is left untouched.
+
+Revision ID: 0008
+Revises: 0007
 Create Date: 2026-11-12
 """
 
@@ -11,8 +15,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision: str = "0006"
-down_revision: str | None = "0005"
+revision: str = "0008"
+down_revision: str | None = "0007"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
@@ -20,11 +24,8 @@ JSON = sa.JSON().with_variant(postgresql.JSONB(), "postgresql")
 
 
 def upgrade() -> None:
-    op.drop_table("optimizations")
-
-
-def downgrade() -> None:
-    # The table comes back empty: the runs themselves are gone once it has been dropped.
+    if sa.inspect(op.get_bind()).has_table("optimizations"):
+        return
     op.create_table(
         "optimizations",
         sa.Column("id", sa.Uuid(), primary_key=True),
@@ -46,3 +47,8 @@ def downgrade() -> None:
     op.create_index("ix_optimizations_dataset_id", "optimizations", ["dataset_id"])
     op.create_index("ix_optimizations_status", "optimizations", ["status"])
     op.create_index("ix_optimizations_created_at", "optimizations", ["created_at"])
+
+
+def downgrade() -> None:
+    # Nothing to undo: the table belongs to revision 0004, which drops it on its own downgrade.
+    pass

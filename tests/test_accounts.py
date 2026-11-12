@@ -285,3 +285,23 @@ def test_accounts_take_precedence_over_the_shared_token(site, monkeypatch):
     monkeypatch.setattr(get_settings(), "access_token", "shared-token")
     assert site.get("/api/datasets", headers={"Authorization": "Bearer shared-token"}).status_code == 401
     assert sign_in(site, ANN).get("/api/datasets").status_code == 200
+
+
+def test_optimization_runs_follow_their_dataset(site):
+    ann_run = sign_in(site, ANN).post("/api/optimize/examples/production").json()
+    assert site.get(f"/api/optimizations/{ann_run['id']}").json()["result_status"] == "optimal"
+
+    sign_in(site, BOB)
+    assert site.get("/api/optimizations").json() == []
+    for method, path in [
+        ("get", f"/api/optimizations/{ann_run['id']}"),
+        ("get", f"/api/optimizations/{ann_run['id']}/report"),
+        ("delete", f"/api/optimizations/{ann_run['id']}"),
+    ]:
+        assert getattr(site, method)(path).status_code == 404, path
+    # Bob cannot point a solver at Ann's dataset either.
+    body = {"dataset_id": ann_run["dataset_id"], "kind": "assignment", "params": {"agent_column": "product"}}
+    assert site.post("/api/optimizations", json=body).status_code == 404
+
+    assert [o["id"] for o in sign_in(site, ADMIN).get("/api/optimizations").json()] == [ann_run["id"]]
+    assert [o["id"] for o in sign_in(site, ANN).get("/api/optimizations").json()] == [ann_run["id"]]

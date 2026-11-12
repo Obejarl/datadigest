@@ -102,7 +102,7 @@ jobs:
         run: |
           docker run -d --name api -p 8000:8000 -e DATABASE_URL=sqlite:////tmp/dd.db datadigest:ci \
             sh -c "alembic upgrade head && uvicorn datadigest.api.main:app --host 0.0.0.0 --port 8000"
-      - name: Profile the bundled samples in the container
+      - name: Profile the bundled samples and solve all four optimization examples in the container
         run: sh scripts/smoke_test.sh http://localhost:8000 || (docker logs api; exit 1)
       - name: Build the Spark variant and profile a sample with Spark inside it
         run: |
@@ -151,7 +151,7 @@ jobs:
         run: |
           total=0; workers=0
           for id in $(docker compose ps -q worker); do
-            n=$(docker logs "$id" 2>&1 | grep -cE "dataset .* -> done" || true)
+            n=$(docker logs "$id" 2>&1 | grep -cE "(dataset|optimization) .* -> done" || true)
             echo "worker $id: $n jobs"
             total=$((total + n)); workers=$((workers + 1))
             [ "$n" -ge 1 ] || { echo "a worker did nothing"; exit 1; }
@@ -245,11 +245,13 @@ jobs:
           kubectl -n datadigest logs deploy/worker > worker.log
           grep -E "dataset .* -> done" worker.log
           [ "$(grep -cE "dataset .* -> done" worker.log)" -ge 4 ]
+          [ "$(grep -cE "optimization .* -> done" worker.log)" -ge 4 ]
       - name: The worker serves Prometheus metrics
         run: |
           kubectl -n datadigest port-forward deploy/worker 9100:9100 > pf-metrics.log 2>&1 &
           for i in $(seq 1 20); do curl -fsS localhost:9100/metrics > worker-metrics.txt 2>/dev/null && break; sleep 1; done
-          grep -E '^datadigest_jobs_total\{kind="dataset",status="done"\} [4-9]' worker-metrics.txt
+          grep -E '^datadigest_jobs_total\{kind="dataset",status="done"\} ([4-9]|[1-9][0-9])' worker-metrics.txt
+          grep -E '^datadigest_jobs_total\{kind="optimization",status="done"\} ([4-9]|[1-9][0-9])' worker-metrics.txt
       - name: Crash recovery - a job abandoned by a dead worker is retried automatically
         run: |
           kubectl -n datadigest scale deploy/worker --replicas=0

@@ -17,11 +17,11 @@ QUEUE = "datadigest:jobs"
 def test_queue_is_fifo_and_carries_the_job_kind(redis):
     a, b = uuid.uuid4(), uuid.uuid4()
     jobqueue.enqueue(redis, QUEUE, a)
-    jobqueue.enqueue(redis, QUEUE, b, kind="export")
+    jobqueue.enqueue(redis, QUEUE, b, kind="optimization")
     assert jobqueue.depth(redis, QUEUE) == 2
     first, second = jobqueue.dequeue(redis, QUEUE, timeout=1), jobqueue.dequeue(redis, QUEUE, timeout=1)
     assert (first.kind, first.id) == ("dataset", a)
-    assert (second.kind, second.id) == ("export", b)
+    assert (second.kind, second.id) == ("optimization", b)
 
 
 def test_queue_reads_bare_ids_from_older_versions(redis):
@@ -241,3 +241,12 @@ def test_dead_job_is_marked_failed_for_the_user(queued_client, redis, factory, m
     assert dataset["status"] == "failed"
     assert "failed 2 times" in dataset["error"]
     assert jobqueue.stats(redis, QUEUE)["dead"] == 1
+
+
+def test_an_idle_worker_does_not_mistake_an_empty_queue_for_an_outage():
+    """The client's reply timeout must outlast the blocking wait, or every idle poll looks like a
+    Redis timeout and the worker backs off instead of taking the next job at once."""
+    client = jobqueue.connect("redis://localhost:6379/0")  # lazy: nothing is contacted
+    kwargs = client.connection_pool.connection_kwargs
+    assert kwargs["socket_timeout"] > jobqueue.BLOCK_SECONDS
+    assert kwargs["socket_connect_timeout"] <= 5

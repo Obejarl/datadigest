@@ -49,4 +49,4 @@ def test_one_command_start_migrates_then_serves(tmp_path, monkeypatch):
     assert start.main(["--port", "9123"], serve=lambda app, **kw: served.update(app=app, **kw)) == 0
     assert served == {"app": "datadigest.api.main:app", "host": "127.0.0.1", "port": 9123}
     tables = set(inspect(create_engine(url)).get_table_names())
-    assert {"datasets", "dataset_files", "users"} <= tables and "optimizations" not in tables
+    assert {"datasets", "dataset_files", "users", "optimizations"} <= tables

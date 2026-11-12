@@ -1,7 +1,7 @@
-"""The unit of work: profile one dataset.
+"""The units of work: profile one dataset, or run one optimization.
 
 Called by the worker (Redis mode) or by FastAPI BackgroundTasks (inline mode).
-It is idempotent, which the at-least-once queue relies on: running a job twice
+Both are idempotent, which the at-least-once queue relies on: running a job twice
 overwrites the first result with an identical one.
 """
 
@@ -19,11 +19,13 @@ from datadigest.config import get_settings
 from datadigest.core.engines import profile_path
 from datadigest.core.loader import LoadError, load_csv
 from datadigest.core.profile import build_profile
-from datadigest.models import Dataset, DatasetFile, Status, utcnow
+from datadigest.models import Dataset, DatasetFile, Optimization, Status, utcnow
+from datadigest.optimize import run as run_optimizer
+from datadigest.optimize.common import OptimizationError
 
 log = logging.getLogger(__name__)
 
-MODELS = {"dataset": Dataset}
+MODELS = {"dataset": Dataset, "optimization": Optimization}
 
 
 def _seconds_between(start: datetime | None, end: datetime) -> float | None:
@@ -81,6 +83,37 @@ def process_dataset(dataset_id: uuid.UUID, factory: sessionmaker) -> Status | No
 
         status = _finish(dataset, "dataset", db, started)
         log.info("dataset %s -> %s", dataset_id, status)
+        return status
+
+
+def process_optimization(optimization_id: uuid.UUID, factory: sessionmaker) -> Status | None:
+    settings = get_settings()
+    with factory() as db:
+        opt = db.get(Optimization, optimization_id)
+        if opt is None:
+            log.info("optimization %s no longer exists, skipping", optimization_id)
+            return None
+        started = _start(opt, "optimization", db)
+
+        try:
+            raw = db.get(DatasetFile, opt.dataset_id).content
+            df = load_csv(raw, max_rows=settings.max_rows).df
+            result = run_optimizer(opt.kind, df, opt.params, time_limit=settings.opt_time_limit_seconds)
+        except (LoadError, OptimizationError) as exc:
+            opt.status, opt.error = Status.FAILED, str(exc)[:500]
+        except Exception:
+            log.exception("failed to run optimization %s", optimization_id)
+            opt.status, opt.error = Status.FAILED, "Unexpected error while solving the model"
+        else:
+            # "done" means the solver ran; result_status says whether a plan exists (optimal, infeasible...).
+            opt.result = result
+            opt.result_status = result["status"]
+            opt.objective = result["objective"]
+            opt.uplift_pct = (result.get("baseline") or {}).get("uplift_pct")
+            opt.status, opt.error = Status.DONE, None
+
+        status = _finish(opt, "optimization", db, started)
+        log.info("optimization %s (%s) -> %s", optimization_id, opt.kind, status)
         return status
 
 

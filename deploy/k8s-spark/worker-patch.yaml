@@ -7,6 +7,7 @@ metadata:
 spec:
   template:
     spec:
+      enableServiceLinks: false   # see spark-master.yaml: keeps SPARK_MASTER_PORT=tcp://... out of the JVM
       securityContext:
         fsGroup: 1000   # lets the app user write to the shared volume on storage that honours it
       containers:

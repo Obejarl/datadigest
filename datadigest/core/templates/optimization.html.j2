@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ title }} · DataDigest optimization</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Roboto+Mono:wght@400;600;700&display=swap">
+<script src="{{ plotly_js }}"></script>
+<style>
+  :root { --bg:#070a12; --glass:rgba(15,22,36,.78); --edge:rgba(148,163,184,.14); --edge2:rgba(148,163,184,.08);
+          --txt:#e6edf3; --sub:#93a1b4; --dim:#64748b; --cyan:#22d3ee; --violet:#a78bfa; --green:#10e39a;
+          --amber:#ffc857; --red:#ff4d6d; --r:16px; color-scheme: dark;
+          --font:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif; --mono:"Roboto Mono",ui-monospace,Consolas,monospace; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:14px/1.55 var(--font); background:var(--bg); color:var(--txt); -webkit-font-smoothing:antialiased; }
+  body::before { content:""; position:fixed; inset:0; z-index:-1; pointer-events:none;
+    background: radial-gradient(1100px 560px at 10% -10%, rgba(34,211,238,.11), transparent 60%),
+                radial-gradient(900px 500px at 95% 0%, rgba(167,139,250,.11), transparent 60%); }
+  main { max-width:1100px; margin:0 auto; padding:40px 20px 64px; }
+  .brand { font:700 13px var(--font); letter-spacing:.14em; text-transform:uppercase; color:var(--sub); }
+  .brand b { background:linear-gradient(90deg,var(--cyan),var(--violet)); -webkit-background-clip:text; background-clip:text; color:transparent; }
+  h1 { margin:6px 0 4px; font-size:30px; letter-spacing:-.015em; overflow-wrap:anywhere; }
+  h2 { display:flex; align-items:center; gap:9px; margin:36px 0 14px; font-size:17px; color:#c9d4e3; }
+  h2::before { content:""; width:4px; height:15px; border-radius:3px; background:linear-gradient(180deg,var(--cyan),var(--violet)); box-shadow:0 0 10px rgba(34,211,238,.7); }
+  .muted { color:var(--sub); }
+  .chips { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .chip { font:600 12px var(--mono); padding:3px 10px; border-radius:999px; background:rgba(255,255,255,.05); border:1px solid var(--edge); color:var(--sub); }
+  .card, .tile { background:var(--glass); border:1px solid var(--edge); border-radius:var(--r);
+                 box-shadow:inset 0 1px 0 rgba(255,255,255,.06), 0 14px 40px rgba(0,0,0,.32); }
+  .bento { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:14px; margin-top:24px; }
+  .tile { padding:16px 18px; border-top:2px solid var(--tc, var(--cyan)); }
+  .k { font-size:11px; font-weight:700; letter-spacing:.12em; text-transform:uppercase; color:var(--sub); }
+  .v { margin-top:8px; font:700 26px/1.1 var(--mono); overflow-wrap:anywhere; }
+  .v small { font-size:14px; color:var(--sub); margin-left:3px; }
+  .s { margin-top:4px; font-size:12.5px; color:var(--sub); }
+  .insight { display:flex; gap:10px; padding:10px 14px; margin:8px 0; border-radius:11px; background:rgba(255,255,255,.03);
+             border:1px solid var(--edge2); border-left:3px solid var(--cyan); }
+  .charts { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,480px),1fr)); gap:14px; }
+  .card { padding:16px 18px; }
+  .card.wide { grid-column:1/-1; }
+  .table-wrap { overflow-x:auto; padding:0; margin:14px 0; }
+  table { width:100%; border-collapse:collapse; }
+  th, td { text-align:left; padding:9px 14px; border-bottom:1px solid var(--edge2); white-space:nowrap; }
+  th { font-size:11px; letter-spacing:.1em; text-transform:uppercase; color:var(--sub); }
+  td.n { text-align:right; font-family:var(--mono); }
+  tr:last-child td { border-bottom:0; }
+  footer { margin-top:48px; font-size:12.5px; color:var(--dim); text-align:center; }
+  @media (max-width:760px) { .bento { grid-template-columns:1fr 1fr; } }
+  @media print { body::before { display:none; } .card, .tile { box-shadow:none; break-inside:avoid; } }
+</style>
+</head>
+<body>
+<main>
+  {% set tones = {"cyan": "#22d3ee", "green": "#10e39a", "amber": "#ffc857", "violet": "#a78bfa", "red": "#ff4d6d"} %}
+  <div class="brand"><b>DataDigest</b> · optimization report</div>
+  <h1>{{ title }}</h1>
+  <div class="muted">Generated {{ generated_at }}</div>
+  <div class="chips">
+    <span class="chip">{{ kind_title }}</span>
+    <span class="chip">{{ r.status }}</span>
+    <span class="chip">{{ r.solver.name }}</span>
+    {% if r.solver.seconds is not none %}<span class="chip">{{ "%.3f" | format(r.solver.seconds) }} s</span>{% endif %}
+    {% if r.solver.variables %}<span class="chip">{{ r.solver.variables }} variables · {{ r.solver.constraints }} constraints</span>{% endif %}
+  </div>
+
+  <div class="bento">
+    {% for k in r.kpis %}
+    <div class="tile" style="--tc: {{ tones.get(k.tone, '#22d3ee') }}">
+      <div class="k">{{ k.label }}</div>
+      <div class="v">{{ k.value }}{% if k.unit %}<small>{{ k.unit }}</small>{% endif %}</div>
+      {% if k.sub %}<div class="s">{{ k.sub }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <h2>What the optimum tells you</h2>
+  {% for line in r.insights %}<div class="insight">{{ line }}</div>{% endfor %}
+
+  {% if r.charts %}
+  <h2>Charts</h2>
+  <div class="charts">
+    {% for c in r.charts %}<div class="card{% if c.wide %} wide{% endif %}"><div class="k">{{ c.title }}</div><div data-chart="{{ c.id }}"></div></div>{% endfor %}
+  </div>
+  {% endif %}
+
+  {% for t in r.tables %}
+  <h2>{{ t.title }}</h2>
+  <div class="card table-wrap">
+    <table>
+      <tr>{% for col in t.columns %}<th>{{ col }}</th>{% endfor %}</tr>
+      {% for row in t.rows %}
+      <tr>{% for cell in row %}
+        {% if cell is number %}<td class="n">{{ "{:,.2f}".format(cell) if cell is float and cell != cell | int else "{:,}".format(cell | int) }}</td>
+        {% elif cell is none %}<td class="muted">–</td>
+        {% else %}<td>{{ cell }}</td>{% endif %}
+      {% endfor %}</tr>
+      {% endfor %}
+    </table>
+  </div>
+  {% endfor %}
+
+  <footer>Generated by DataDigest · operations research on your data</footer>
+</main>
+<script>
+  // tojson escapes <, > and & so user data cannot close this script tag.
+  const CHARTS = {{ r.charts | tojson }};
+  const grid = "rgba(148,163,184,0.10)";
+  const axis = (a) => ({ ...(a || {}), gridcolor: grid, zerolinecolor: "rgba(148,163,184,0.18)" });
+  for (const chart of CHARTS) {
+    const el = document.querySelector(`[data-chart="${CSS.escape(chart.id)}"]`);
+    if (!el || !window.Plotly) continue;
+    const layout = { ...chart.figure.layout, paper_bgcolor: "rgba(0,0,0,0)", plot_bgcolor: "rgba(0,0,0,0)",
+                     font: { family: "Inter, system-ui, sans-serif", size: 12, color: "#93a1b4" },
+                     xaxis: axis(chart.figure.layout.xaxis), yaxis: axis(chart.figure.layout.yaxis) };
+    Plotly.newPlot(el, chart.figure.data, layout, { responsive: true, displaylogo: false, displayModeBar: false });
+  }
+</script>
+</body>
+</html>

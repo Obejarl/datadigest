@@ -5,7 +5,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ## [0.8.0] - 2026-11-12
 
-One purpose per tool, people's data kept apart, and Spark on a cluster.
+People's data kept apart, Spark on a cluster, statistics in plain words, and three named
+sections under one roof.
 
 ### Added
 - **User accounts** (`AUTH_MODE=accounts`). People sign in with an email and a password; members see
@@ -22,23 +23,38 @@ One purpose per tool, people's data kept apart, and Spark on a cluster.
   relations that are both significant and large, then what is easy to misread (significant but tiny
   effects, averages and correlations that depend on a few outliers). A significant result with a
   small effect is marked amber instead of green, and a reading guide says how many tests were run.
+- **Optimization runs respect accounts.** A run belongs to its dataset: members see and change
+  only the runs on their own datasets (somebody else's run answers `404`), administrators see
+  all of them.
 - `STATS_MAX_ROWS`: the number of rows the statistics are computed on (default 50,000).
 - `python -m datadigest`: migrate and serve in one command, with no other service to install.
 - The sign-in page shows its error messages in a styled box (they were unstyled).
 
 ### Changed
 - The dashboard script is one file per page (`core.js`, `index.js`, `dataset.js`, `stats.js`,
-  `capacity.js`, `account.js`, `login.js`) instead of one 1,000-line file, and
+  `planner.js`, `optimize.js`, `capacity.js`, `account.js`, `login.js`) instead of one
+  1,000-line file, and
   `datadigest/core/stats.py` is a package with one module per section.
-- The smoke test profiles six samples at once instead of solving optimization examples.
+- **Three sections, defined once.** Every feature now belongs to one of *Data quality* (can this
+  file be trusted?), *Optimize* (what should we do with it?) and *Operations* (how do we run
+  DataDigest itself?). `datadigest/sections.py` is the only place that says so: the navigation
+  bar (grouped by section), the section cards on the home page, footer links for narrow screens
+  (which hide the bar) and the order of the API reference are generated from it, and a test
+  fails when a page or an API route has no section. Pages no longer carry their own copy of
+  the navigation. The first link is now called "Datasets", and "Account" is in the bar.
+- The operations-research solvers keep their own script and routes module. The capacity planner moved out of `datadigest/optimize/` to `datadigest/capacity.py`
+  (`/api/capacity` is unchanged); the result shape both share is in `datadigest/envelope.py`.
+- The smoke test profiles six samples at once before solving the four optimization examples.
 - README screenshots show the current interface.
 
-### Removed
-- **The operations-research solvers** (production planning, transportation, assignment, budget
-  allocation) moved to their own project, OptiDesk. The `/optimize` pages, `/api/optimize/*` and
-  `/api/optimizations*` are gone, and migration `0006` drops the `optimizations` table: **stored
-  optimization runs are deleted by the upgrade**. The capacity planner stays.
-- `OPT_TIME_LIMIT_SECONDS` and the `datadigest_optimizations` metric.
+### Fixed
+- **An idle worker no longer backs off.** The Redis client's default reply timeout (5 s) was the
+  same as the worker's blocking wait on an empty queue, so every idle poll was logged as "queue
+  or database unavailable" and the worker slept for up to 30 s before it looked again: a job
+  that arrived then waited that long. The client now waits longer than the block.
+- The Spark master in `deploy/k8s-spark/` crashed at start: Kubernetes injects
+  `SPARK_MASTER_PORT=tcp://...` for a Service named `spark-master`, and Spark reads that as its
+  own port. The Spark pods switch service links off.
 
 ## [0.7.1] - 2026-11-01
 

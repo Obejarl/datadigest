@@ -35,6 +35,7 @@ spec:
               createdb restore_check
               pg_restore --no-owner --dbname=restore_check "$latest"
               echo "datasets in the restored copy: $(psql -At -d restore_check -c 'select count(*) from datasets')"
+              echo "optimization runs in the restored copy: $(psql -At -d restore_check -c 'select count(*) from optimizations')"
               dropdb restore_check
               echo "restore check passed"
           volumeMounts:

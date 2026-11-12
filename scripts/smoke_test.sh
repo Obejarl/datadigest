@@ -1,7 +1,8 @@
 #!/usr/bin/env sh
-# Smoke-test a running DataDigest: readiness, then six full profiles of the bundled samples
-# (proves the samples and the statistics stack are in the image, not just that it boots;
-# six jobs queued at once also give every worker something to do).
+# Smoke-test a running DataDigest: readiness, six full profiles of the bundled samples and
+# the four optimization examples (proves the samples, the statistics stack and the SciPy
+# solvers are in the image, not just that it boots; jobs queued at once also give every
+# worker something to do).
 #
 #   scripts/smoke_test.sh http://localhost:8000
 set -eu
@@ -43,6 +44,13 @@ for dataset in $ids; do
   [ "$(echo "$profile" | cut -d' ' -f1)" = "done" ] || exit 1
 done
 api "$BASE/api/datasets/$dataset/profile" | json "'quality score: %s' % d['summary']['quality']['score']"
+
+for kind in production transport assignment knapsack; do
+  run=$(api -X POST "$BASE/api/optimize/examples/$kind" | json "d['id']")
+  result=$(wait_for "$BASE/api/optimizations/$run")
+  echo "$kind: $result"
+  [ "$result" = "done optimal" ] || exit 1
+done
 
 api "$BASE/api/capacity" | json "'capacity: %s workers recommended' % d['objective']"
 echo "smoke test passed"
